@@ -7,12 +7,12 @@ import (
 	"os"
 	"time"
 
-	"github.com/shouni/go-web-exact/pkg/retry"
-	"go-ai-client/pkg/prompt"
-
 	"google.golang.org/genai"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+
+	"github.com/shouni/go-web-exact/pkg/retry"
+	"go-ai-client/pkg/prompt"
 )
 
 const (
