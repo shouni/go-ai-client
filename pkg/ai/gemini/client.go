@@ -19,20 +19,23 @@ import (
 const (
 	// デフォルトのリトライ回数
 	DefaultMaxRetries = 3
+	// DefaultRequestTimeout は genai.ClientConfig に存在しないため、コメントアウトまたは削除します。
+	// 代わりに、API呼び出しのタイムアウトは context.Context で制御されます。
+	// DefaultRequestTimeout = 30 * time.Second
 )
 
-// GenerativeModel は、このクライアントが提供する主要な操作を定義するインターフェースです。
+// GenerativeModel is the interface that defines the core operations this client provides.
 type GenerativeModel interface {
 	GenerateContent(ctx context.Context, inputContent []byte, mode string, modelName string) (*Response, error)
 }
 
-// Client はGemini APIとの通信を管理します。GenerativeModel インターフェースを満たします。
+// Client manages communication with the Gemini API. It implements the GenerativeModel interface.
 type Client struct {
 	client      *genai.Client
 	retryConfig retry.Config
 }
 
-// Config は Client を初期化するための設定を定義します。
+// Config defines the configuration for initializing the Client.
 type Config struct {
 	APIKey     string
 	MaxRetries uint64
@@ -86,14 +89,13 @@ func NewClientFromEnv(ctx context.Context) (*Client, error) {
 	}
 
 	cfg := Config{
-		APIKey:     apiKey,
-		MaxRetries: DefaultMaxRetries,
+		APIKey: apiKey,
 	}
 
 	return NewClient(ctx, cfg)
 }
 
-// GenerateContent はプロンプトをGeminiモデルに送信し、リトライロジックを適用します。
+// GenerateContent sends a prompt to the Gemini model with a retry mechanism.
 func (c *Client) GenerateContent(ctx context.Context, inputContent []byte, mode string, modelName string) (*Response, error) {
 
 	// 1. テンプレートから完全なプロンプト文字列を構築
@@ -107,6 +109,7 @@ func (c *Client) GenerateContent(ctx context.Context, inputContent []byte, mode 
 
 	// 2. API呼び出しとレスポンス処理を行う操作関数 (retry.Operation型に準拠)
 	op := func() error {
+		// Context には cmd/root.go で設定されたタイムアウトが適用される
 		resp, err := c.client.Models.GenerateContent(ctx, modelName, contents, nil)
 
 		if err != nil {
@@ -126,12 +129,9 @@ func (c *Client) GenerateContent(ctx context.Context, inputContent []byte, mode 
 	// 3. shouldRetryFn: API固有の一時的エラー判定ロジック (retry.ShouldRetryFunc型に準拠)
 	shouldRetryFn := func(err error) bool {
 		var apiErr *APIResponseError
-
-		// APIResponseError（コンテンツブロックなど）はリトライすべきでない
 		if errors.As(err, &apiErr) {
 			return false
 		}
-
 		// API呼び出しエラーの場合のみ、Gemini固有の判定ロジックを適用
 		return shouldRetry(err)
 	}
