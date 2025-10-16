@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"time"
 
 	"google.golang.org/genai"
 	"google.golang.org/grpc/codes"
@@ -15,33 +14,35 @@ import (
 	"go-ai-client/pkg/prompt"
 )
 
+// Default settings for API calls
 const (
-	// クライアントのデフォルトタイムアウト（リトライロジックとは別個に、単一リクエストの最大時間を設定）
-	DefaultRequestTimeout = 30 * time.Second
+	// デフォルトのリトライ回数
+	DefaultMaxRetries = 3
 )
 
 // GenerativeModel は、このクライアントが提供する主要な操作を定義するインターフェースです。
 type GenerativeModel interface {
-	GenerateScript(ctx context.Context, inputContent []byte, mode string) (string, error)
+	GenerateContent(ctx context.Context, inputContent []byte, mode string, modelName string) (*Response, error)
 }
 
 // Client はGemini APIとの通信を管理します。GenerativeModel インターフェースを満たします。
 type Client struct {
-	client    *genai.Client
-	modelName string
-	// ★ 変更点2: 汎用リトライ設定を保持
+	client      *genai.Client
 	retryConfig retry.Config
 }
 
 // Config は Client を初期化するための設定を定義します。
 type Config struct {
-	APIKey    string
-	ModelName string
-	// ★ 変更点3: 最大リトライ回数を設定項目に追加
+	APIKey     string
 	MaxRetries uint64
 }
 
-// NewClient はConfig構造体とcontextを受け取り、Clientを初期化します。
+// Response holds the Gemini API result.
+type Response struct {
+	Text string
+}
+
+// NewClient initializes a Client struct.
 func NewClient(ctx context.Context, cfg Config) (*Client, error) {
 
 	// 1. APIキーのバリデーション
@@ -52,8 +53,6 @@ func NewClient(ctx context.Context, cfg Config) (*Client, error) {
 	// 2. クライアントの作成
 	clientConfig := &genai.ClientConfig{
 		APIKey: cfg.APIKey,
-		// 単一リクエストのタイムアウトを設定
-		Timeout: DefaultRequestTimeout,
 	}
 
 	client, err := genai.NewClient(ctx, clientConfig)
@@ -65,54 +64,49 @@ func NewClient(ctx context.Context, cfg Config) (*Client, error) {
 	retryCfg := retry.DefaultConfig()
 	if cfg.MaxRetries > 0 {
 		retryCfg.MaxRetries = cfg.MaxRetries
+	} else {
+		retryCfg.MaxRetries = DefaultMaxRetries
 	}
 
 	return &Client{
 		client:      client,
-		modelName:   cfg.ModelName,
 		retryConfig: retryCfg,
 	}, nil
 }
 
-// NewClientFromEnv は環境変数からAPIキーを取得し、NewClientを呼び出すヘルパー関数です。
-func NewClientFromEnv(ctx context.Context, modelName string) (GenerativeModel, error) {
+// NewClientFromEnv is a helper function that creates a client using the API key from the environment variable.
+func NewClientFromEnv(ctx context.Context) (*Client, error) {
 	apiKey := os.Getenv("GEMINI_API_KEY")
 	if apiKey == "" {
-		return nil, fmt.Errorf("GEMINI_API_KEY environment variable is not set")
+		apiKey = os.Getenv("GOOGLE_API_KEY") // GOOGLE_API_KEY もサポート
+	}
+	if apiKey == "" {
+		return nil, fmt.Errorf("GEMINI_API_KEY or GOOGLE_API_KEY environment variable is not set")
 	}
 
 	cfg := Config{
-		APIKey:    apiKey,
-		ModelName: modelName,
-		// 環境変数からの作成時にデフォルトリトライ回数を設定
-		MaxRetries: retry.DefaultMaxRetries,
+		APIKey:     apiKey,
+		MaxRetries: DefaultMaxRetries,
 	}
 
 	return NewClient(ctx, cfg)
 }
 
-// GenerateScript はナレーションスクリプトを生成します。
-func (c *Client) GenerateScript(ctx context.Context, inputContent []byte, mode string) (string, error) {
+// GenerateContent はプロンプトをGeminiモデルに送信し、リトライロジックを適用します。
+func (c *Client) GenerateContent(ctx context.Context, inputContent []byte, mode string, modelName string) (*Response, error) {
 
+	// 1. テンプレートから完全なプロンプト文字列を構築
 	finalPrompt, err := prompt.BuildFullPrompt(inputContent, mode)
 	if err != nil {
-		return "", fmt.Errorf("failed to build prompt: %w", err)
+		return nil, fmt.Errorf("failed to build full prompt: %w", err)
 	}
 
-	return c.callGenerateContent(ctx, finalPrompt)
-}
+	var responseText string
+	contents := promptToContents(finalPrompt) // 文字列から Content 構造体を構築
 
-// callGenerateContent はリトライロジックを適用してAPIを呼び出します。
-func (c *Client) callGenerateContent(ctx context.Context, finalPrompt string) (string, error) {
-	var text string
-
-	// 1. API呼び出しとレスポンス処理を行う操作関数 (retry.Operation型に準拠)
+	// 2. API呼び出しとレスポンス処理を行う操作関数 (retry.Operation型に準拠)
 	op := func() error {
-		contents := []*genai.Content{
-			{Role: "user", Parts: []*genai.Part{{Text: finalPrompt}}},
-		}
-
-		resp, err := c.client.Models.GenerateContent(ctx, c.modelName, contents, nil)
+		resp, err := c.client.Models.GenerateContent(ctx, modelName, contents, nil)
 
 		if err != nil {
 			return err // API呼び出し自体のエラー（ネットワークやgRPCエラー）
@@ -121,16 +115,16 @@ func (c *Client) callGenerateContent(ctx context.Context, finalPrompt string) (s
 		// レスポンスからテキストを抽出（ブロックエラーもここで処理）
 		extractedText, extractErr := extractTextFromResponse(resp)
 		if extractErr != nil {
-			return extractErr
+			return extractErr // APIResponseError を返す
 		}
 
-		text = extractedText
+		responseText = extractedText
 		return nil
 	}
 
-	// 2. shouldRetryFn: API固有の一時的エラー判定ロジック (retry.ShouldRetryFunc型に準拠)
+	// 3. shouldRetryFn: API固有の一時的エラー判定ロジック (retry.ShouldRetryFunc型に準拠)
 	shouldRetryFn := func(err error) bool {
-		// レスポンス処理エラー（コンテンツブロックなど）はリトライすべきでない
+		// APIResponseError（コンテンツブロックなど）はリトライすべきでない
 		if errors.As(err, &APIResponseError{}) {
 			return false
 		}
@@ -138,30 +132,43 @@ func (c *Client) callGenerateContent(ctx context.Context, finalPrompt string) (s
 		return shouldRetry(err)
 	}
 
-	// 3. 汎用リトライサービスを利用して操作を実行
-	err := retry.Do(
+	// 4. 汎用リトライサービスを利用して操作を実行
+	err = retry.Do(
 		ctx,
 		c.retryConfig,
-		fmt.Sprintf("Gemini API call to %s", c.modelName),
+		fmt.Sprintf("Gemini API call to %s", modelName),
 		op,
 		shouldRetryFn,
 	)
 
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
-	return text, nil
+	return &Response{Text: responseText}, nil
 }
 
-// APIResponseError は、API呼び出しは成功したがレスポンス処理で問題が発生したエラーです。
+// promptToContents converts a simple string prompt to the genai.Content required by the SDK.
+func promptToContents(text string) []*genai.Content {
+	// 単一のユーザーメッセージとしてコンテンツをラップ
+	return []*genai.Content{
+		{
+			Role: "user",
+			Parts: []*genai.Part{
+				{Text: text},
+			},
+		},
+	}
+}
+
+// APIResponseError is an error that occurred after a successful API call but during response processing (e.g., content blocking).
 type APIResponseError struct {
 	msg string
 }
 
 func (e *APIResponseError) Error() string { return e.msg }
 
-// shouldRetry はエラーがリトライ可能かどうかを判定します。（gRPCエラーコードに基づく）
+// shouldRetry determines if an error is transient and should be retried (based on gRPC error codes).
 func shouldRetry(err error) bool {
 	// コンテキストエラー（ユーザーによるキャンセルやタイムアウト）はリトライ対象
 	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
@@ -186,7 +193,7 @@ func shouldRetry(err error) bool {
 	}
 }
 
-// extractTextFromResponse は、成功したAPIレスポンスからテキストを安全に抽出します。
+// extractTextFromResponse safely extracts text from a successful API response.
 func extractTextFromResponse(resp *genai.GenerateContentResponse) (string, error) {
 	if resp == nil || len(resp.Candidates) == 0 {
 		return "", &APIResponseError{msg: "Gemini APIから空または無効なレスポンスが返されました"}
