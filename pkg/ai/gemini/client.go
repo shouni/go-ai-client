@@ -10,8 +10,9 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	"github.com/shouni/go-web-exact/pkg/retry"
 	"go-ai-client/pkg/prompt"
+
+	"github.com/shouni/go-web-exact/pkg/retry"
 )
 
 // Default settings for API calls
@@ -124,10 +125,13 @@ func (c *Client) GenerateContent(ctx context.Context, inputContent []byte, mode 
 
 	// 3. shouldRetryFn: API固有の一時的エラー判定ロジック (retry.ShouldRetryFunc型に準拠)
 	shouldRetryFn := func(err error) bool {
+		var apiErr *APIResponseError
+
 		// APIResponseError（コンテンツブロックなど）はリトライすべきでない
-		if errors.As(err, &APIResponseError{}) {
+		if errors.As(err, &apiErr) {
 			return false
 		}
+
 		// API呼び出しエラーの場合のみ、Gemini固有の判定ロジックを適用
 		return shouldRetry(err)
 	}
