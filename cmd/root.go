@@ -2,19 +2,29 @@ package cmd
 
 import (
 	"context"
+	_ "embed"
 	"fmt"
 	"io"
 	"os"
 	"strings"
 	"time"
 
-	"github.com/spf13/cobra"
 	"go-ai-client/pkg/ai/gemini"
 	"go-ai-client/pkg/prompt"
+
+	"github.com/spf13/cobra"
 )
 
+// 🚨 修正: embed.FS ではなく、string 変数に直接埋め込むことで、ReadFileとエラー処理を不要にする
+
+//go:embed prompt/zundamon_solo.md
+var ZundamonSoloPrompt string
+
+//go:embed prompt/zundametan_dialogue.md
+var ZundaMetanDialoguePrompt string
+
 // グローバル定数
-const separator = "=================================================="
+const separator = "=============================================="
 
 // グローバル変数: コマンドラインフラグの値を保持
 var (
@@ -31,10 +41,9 @@ var rootCmd = &cobra.Command{
 ナレーションスクリプトを生成するためにGemini APIを呼び出すCLIツールです。
 
 利用例:
-  ai-client "今日の天気は晴れです" -m solo
-  cat input.txt | ai-client -m dialogue`,
+  ai-client "今日の天気は晴れです" -d solo
+  cat input.txt | ./bin/ai-client -d dialogue`,
 
-	// 実行されるメインロジック (エラーハンドリングのため RunE を使用)
 	RunE: func(cmd *cobra.Command, args []string) error {
 
 		// 1. 入力内容の読み込み
@@ -44,18 +53,16 @@ var rootCmd = &cobra.Command{
 		if len(args) > 0 {
 			// コマンドライン引数を入力として使用
 			inputContent = []byte(strings.Join(args, " "))
-		} else if cmd.InOrStdin() != os.Stdin {
-			// パイプ（標準入力）から読み込み
+		} else {
+			// コマンドライン引数がない場合、標準入力から読み込みを試みる
 			inputContent, err = io.ReadAll(cmd.InOrStdin())
 			if err != nil {
 				return fmt.Errorf("標準入力からの読み込みエラー: %w", err)
 			}
-		} else {
-			return fmt.Errorf("致命的エラー: 処理するテキストがコマンドライン引数または標準入力から提供されていません。")
 		}
 
 		if len(inputContent) == 0 {
-			return fmt.Errorf("致命的エラー: 入力内容が空です。")
+			return fmt.Errorf("致命的エラー: 処理するテキストがコマンドライン引数または標準入力から提供されていません。")
 		}
 
 		// 2. APIキーの確認
@@ -68,7 +75,7 @@ var rootCmd = &cobra.Command{
 		ctx, cancel := context.WithTimeout(context.Background(), timeoutDuration)
 		defer cancel()
 
-		// 4. クライアントの初期化 (🚨 修正点 1, 2)
+		// 4. クライアントの初期化
 		client, err := gemini.NewClientFromEnv(ctx)
 		if err != nil {
 			return fmt.Errorf("Geminiクライアントの初期化に失敗しました: %w", err)
@@ -77,7 +84,6 @@ var rootCmd = &cobra.Command{
 		// 5. 応答の生成
 		fmt.Printf("モデル %s でスクリプトを生成中 (モード: %s, Timeout: %d秒)...\n", modelName, mode, timeout)
 
-		// 🚨 修正: GenerateContentの引数を新しいインターフェースに合わせる
 		resp, err := client.GenerateContent(ctx, inputContent, mode, modelName)
 
 		if err != nil {
@@ -94,21 +100,8 @@ var rootCmd = &cobra.Command{
 		return nil // 正常終了
 	},
 
-	// 引数検証のカスタムロジック
 	Args: func(cmd *cobra.Command, args []string) error {
-		// 標準入力がない場合（argsが空でないことを期待）
-		if cmd.InOrStdin() == os.Stdin && len(args) == 0 {
-			// 標準入力がパイプされていないことを確認するためのロジックは複雑なため、
-			// ひとまず args が空かつパイプがない場合にエラーとする
-			stat, _ := os.Stdin.Stat()
-			isPiped := (stat.Mode() & os.ModeCharDevice) == 0
-
-			if !isPiped && len(args) == 0 {
-				return fmt.Errorf("エラー: 処理するテキストをコマンドライン引数として提供するか、標準入力からパイプしてください。")
-			}
-		}
-
-		// モードフラグの検証
+		// モードフラグの検証 (テンプレートが登録されているかを確認)
 		if _, err := prompt.GetPromptByMode(mode); err != nil {
 			return err
 		}
@@ -122,9 +115,35 @@ func Execute() error {
 	return rootCmd.Execute()
 }
 
-// init() はアプリケーション起動時に自動的に実行され、フラグを設定します。
+// init() はアプリケーション起動時に自動的に実行され、フラグとプロンプトテンプレートを設定します。
 func init() {
+	// フラグの設定
 	rootCmd.PersistentFlags().IntVarP(&timeout, "timeout", "t", 60, "APIリクエストのタイムアウト時間 (秒)")
-	rootCmd.PersistentFlags().StringVarP(&modelName, "model", "m", "gemini-2.5-flash", "使用するGeminiモデル名 (例: gemini-2.5-pro)")
-	rootCmd.PersistentFlags().StringVarP(&mode, "mode", "d", "solo", "生成するスクリプトのモード (solo, dialogue)")
+	rootCmd.PersistentFlags().StringVarP(&modelName, "model", "m", "gemini-1.5-flash", "使用するGeminiモデル名 (例: gemini-1.5-flash, gemini-1.5-pro)")
+	rootCmd.PersistentFlags().StringVarP(&mode, "mode", "d", "solo", "生成するスクリプトのモード (solo, dialogue) -d はdialogueの略")
+
+	// 埋め込まれた string 変数を使って prompt パッケージに登録する
+	registerPromptTemplates()
+}
+
+// registerPromptTemplates は、埋め込まれた string 変数からテンプレートを読み込み、pkg/prompt に登録します。
+func registerPromptTemplates() {
+	// 🚨 修正: string 変数に直接埋め込まれているため、ReadFileのエラー処理は不要。
+
+	// Soloモードのテンプレート登録
+	if ZundamonSoloPrompt == "" {
+		// テンプレートが空の場合（通常は発生しないが、エラーチェックとして）
+		panic("ソロテンプレート (ZundamonSoloPrompt) の埋め込みが失敗しているか、ファイルが空です。")
+	}
+	if err := prompt.RegisterTemplate("solo", ZundamonSoloPrompt); err != nil {
+		panic(fmt.Sprintf("ソロテンプレートの登録に失敗: %v", err))
+	}
+
+	// Dialogueモードのテンプレート登録
+	if ZundaMetanDialoguePrompt == "" {
+		panic("対話テンプレート (ZundaMetanDialoguePrompt) の埋め込みが失敗しているか、ファイルが空です。")
+	}
+	if err := prompt.RegisterTemplate("dialogue", ZundaMetanDialoguePrompt); err != nil {
+		panic(fmt.Sprintf("対話テンプレートの登録に失敗: %v", err))
+	}
 }
