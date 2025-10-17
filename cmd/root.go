@@ -2,7 +2,7 @@ package cmd
 
 import (
 	"context"
-	_ "embed"
+	_ "embed" // go:embed のためにアンダースコアインポート
 	"fmt"
 	"io"
 	"os"
@@ -11,12 +11,12 @@ import (
 
 	"github.com/shouni/go-ai-client/pkg/ai/gemini"
 	"github.com/shouni/go-ai-client/pkg/prompt"
-
 	"github.com/spf13/cobra"
 )
 
-// 🚨 修正: embed.FS ではなく、string 変数に直接埋め込むことで、ReadFileとエラー処理を不要にする
-
+// プロンプトテンプレートをstring変数に直接埋め込む
+// ファイルは cmd/prompt/ に配置されていることを想定
+//
 //go:embed prompt/zundamon_solo.md
 var ZundamonSoloPrompt string
 
@@ -119,7 +119,7 @@ func Execute() error {
 func init() {
 	// フラグの設定
 	rootCmd.PersistentFlags().IntVarP(&timeout, "timeout", "t", 60, "APIリクエストのタイムアウト時間 (秒)")
-	rootCmd.PersistentFlags().StringVarP(&modelName, "model", "m", "gemini-1.5-flash", "使用するGeminiモデル名 (例: gemini-1.5-flash, gemini-1.5-pro)")
+	rootCmd.PersistentFlags().StringVarP(&modelName, "model", "m", "gemini-2.5-flash", "使用するGeminiモデル名 (例: gemini-2.5-flash, gemini-2.5-pro)")
 	rootCmd.PersistentFlags().StringVarP(&mode, "mode", "d", "solo", "生成するスクリプトのモード (solo, dialogue) -d はdialogueの略")
 
 	// 埋め込まれた string 変数を使って prompt パッケージに登録する
@@ -128,22 +128,26 @@ func init() {
 
 // registerPromptTemplates は、埋め込まれた string 変数からテンプレートを読み込み、pkg/prompt に登録します。
 func registerPromptTemplates() {
-	// 🚨 修正: string 変数に直接埋め込まれているため、ReadFileのエラー処理は不要。
 
-	// Soloモードのテンプレート登録
+	// ユーティリティ関数: エラー発生時にエラーメッセージを出力し、終了コード1でプロセスを終了する
+	safeExit := func(msg string) {
+		fmt.Fprintf(os.Stderr, "クリティカルエラー (起動時): %s\n", msg)
+		os.Exit(1)
+	}
+
+	// 1. Soloモードのテンプレート登録
 	if ZundamonSoloPrompt == "" {
-		// テンプレートが空の場合（通常は発生しないが、エラーチェックとして）
-		panic("ソロテンプレート (ZundamonSoloPrompt) の埋め込みが失敗しているか、ファイルが空です。")
+		safeExit("ソロテンプレート (ZundamonSoloPrompt) の埋め込みが失敗しているか、ファイルが空です。")
 	}
 	if err := prompt.RegisterTemplate("solo", ZundamonSoloPrompt); err != nil {
-		panic(fmt.Sprintf("ソロテンプレートの登録に失敗: %v", err))
+		safeExit(fmt.Sprintf("ソロテンプレートの登録に失敗: %v", err))
 	}
 
-	// Dialogueモードのテンプレート登録
+	// 2. Dialogueモードのテンプレート登録
 	if ZundaMetanDialoguePrompt == "" {
-		panic("対話テンプレート (ZundaMetanDialoguePrompt) の埋め込みが失敗しているか、ファイルが空です。")
+		safeExit("対話テンプレート (ZundaMetanDialoguePrompt) の埋め込みが失敗しているか、ファイルが空です。")
 	}
 	if err := prompt.RegisterTemplate("dialogue", ZundaMetanDialoguePrompt); err != nil {
-		panic(fmt.Sprintf("対話テンプレートの登録に失敗: %v", err))
+		safeExit(fmt.Sprintf("対話テンプレートの登録に失敗: %v", err))
 	}
 }
