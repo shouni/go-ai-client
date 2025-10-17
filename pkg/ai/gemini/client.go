@@ -10,8 +10,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	"go-ai-client/pkg/prompt"
-
+	"github.com/shouni/go-ai-client/pkg/prompt"
 	"github.com/shouni/go-web-exact/pkg/retry"
 )
 

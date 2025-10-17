@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"go-ai-client/pkg/ai/gemini"
-	"go-ai-client/pkg/prompt"
+	"github.com/shouni/go-ai-client/pkg/ai/gemini"
+	"github.com/shouni/go-ai-client/pkg/prompt"
 
 	"github.com/spf13/cobra"
 )
