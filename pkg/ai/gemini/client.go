@@ -97,10 +97,22 @@ func NewClientFromEnv(ctx context.Context) (*Client, error) {
 // GenerateContent sends a prompt to the Gemini model with a retry mechanism.
 func (c *Client) GenerateContent(ctx context.Context, inputContent []byte, mode string, modelName string) (*Response, error) {
 
-	// 1. テンプレートから完全なプロンプト文字列を構築
-	finalPrompt, err := prompt.BuildFullPrompt(inputContent, mode)
-	if err != nil {
-		return nil, fmt.Errorf("failed to build full prompt: %w", err)
+	var finalPrompt string
+	var err error
+
+	// 1. モードが空の場合はテンプレート構築をスキップする
+	if mode == "" {
+		// generic モード: テンプレートを使用せず、入力内容をそのままプロンプトとする
+		finalPrompt = string(inputContent)
+
+	} else {
+		// prompt モード: テンプレートを使用して最終プロンプトを構築
+		// mode には "solo" や "dialogue" などのテンプレート名が入る
+		finalPrompt, err = prompt.BuildFullPrompt(inputContent, mode)
+		if err != nil {
+			// エラーメッセージはテンプレート名を含んでいるため、そのまま返す
+			return nil, fmt.Errorf("failed to build full prompt: %w", err)
+		}
 	}
 
 	var responseText string

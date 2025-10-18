@@ -69,7 +69,13 @@ func generateAndOutput(ctx context.Context, inputContent []byte, mode, modelName
 	// 2. 応答の生成
 	fmt.Printf("モデル %s で応答を生成中 (モード: %s, Timeout: %d秒)...\n", modelName, mode, timeout)
 
-	resp, err := client.GenerateContent(ctx, inputContent, mode, modelName)
+	modeForClient := mode
+	if mode == "generic" {
+		modeForClient = "" // テンプレートを使用しないことを示すために空文字列を渡す
+	}
+
+	//	resp, err := client.GenerateContent(ctx, inputContent, mode, modelName)
+	resp, err := client.GenerateContent(ctx, inputContent, modeForClient, modelName)
 
 	if err != nil {
 		return fmt.Errorf("API処理中にエラーが発生しました: %w", err)
