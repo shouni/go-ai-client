@@ -1,14 +1,54 @@
 package prompt
 
 import (
+	"os"
 	"strings"
 	"testing"
 )
 
-// NOTE: このテストは、builder.go内の GetPromptByMode がテンプレート文字列をハードコードしていることを前提としています。
+// --- テスト設定: アプリケーションの init() をエミュレート ---
+
+// テスト用のダミーテンプレート定義
+// 実際のテンプレートの内容は分からないため、テストで検証したい固有の文字列と
+// 埋め込みタグを模倣したシンプルな構造で定義する。
+// NOTE: 実際の builder.go のテンプレート内のタグに合わせて InputText を使用する。
+const testSoloTemplate = `
+一人の話者によるモノローグ形式のスクリプトに変換
+[入力テキスト]
+{{.InputText}}
+`
+
+const testDialogueTemplate = `
+二人の話者（ずんだもん、めたん）による対話スクリプトに変換
+[入力テキスト]
+{{.InputText}}
+`
+
+// TestMain 関数: 全テスト実行前に一度だけ実行され、テンプレートを登録する
+func TestMain(m *testing.M) {
+	// テンプレートをテスト開始前に登録する
+	// 本来のアプリケーションで登録される「solo」と「dialogue」を登録
+	if err := RegisterTemplate("solo", testSoloTemplate); err != nil {
+		// 登録失敗は致命的エラー
+		panic("Solo テンプレートのテスト登録に失敗: " + err.Error())
+	}
+	if err := RegisterTemplate("dialogue", testDialogueTemplate); err != nil {
+		// 登録失敗は致命的エラー
+		panic("Dialogue テンプレートのテスト登録に失敗: " + err.Error())
+	}
+
+	// テストを実行
+	code := m.Run()
+
+	// 終了コードでプロセスを終了
+	os.Exit(code)
+}
+
+// --- 既存のテストロジック（修正なし） ---
 
 // TestGetPromptByMode は、モードに応じたテンプレートが正しく取得されるか、および未対応モードでエラーが返されるかを検証します。
 func TestGetPromptByMode(t *testing.T) {
+	// NOTE: このテストは、TestMain で登録されたダミーテンプレートを使用します。
 	tests := []struct {
 		name              string
 		mode              string
@@ -39,6 +79,7 @@ func TestGetPromptByMode(t *testing.T) {
 			result, err := GetPromptByMode(tt.mode)
 
 			if (err != nil) != tt.wantErr {
+				// 期待値とエラー状態が不一致の場合、エラー内容も出力
 				t.Fatalf("FAIL: GetPromptByMode(%s) エラー状態が期待値と不一致\n  got error: %v, want error: %v", tt.mode, err, tt.wantErr)
 			}
 
@@ -55,7 +96,7 @@ func TestBuildFullPrompt_Success(t *testing.T) {
 	rawInput := "AIは人間の生活を豊かにします。"
 	testInput := []byte(rawInput)
 	// builder.goのテンプレート内のタグに合わせて期待値を設定
-	expectedInputLine := "[入力テキスト]\n" + rawInput
+	expectedInputLine := "[入力テキスト]\n" + rawInput // NOTE: ダミーテンプレートに合わせて\nの後の文字列を期待値とする
 
 	tests := []struct {
 		name string
