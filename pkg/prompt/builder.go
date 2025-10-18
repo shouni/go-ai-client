@@ -7,13 +7,10 @@ import (
 	"text/template"
 )
 
-// templateMap は、モード名 (string) とそれに対応するプロンプトテンプレート文字列を格納するマップです。
-var templateMap = make(map[string]string)
+var parsedTemplateMap = make(map[string]*template.Template)
 var mapMutex sync.RWMutex
 
 // RegisterTemplate は、指定されたモード名に対してプロンプトテンプレート文字列を登録します。
-// これは、アプリケーションの初期化段階（例: cmd/rootのinit関数）で呼び出されることを想定しています。
-// 外部からのテンプレート注入を可能にし、promptパッケージの汎用性を高めます。
 func RegisterTemplate(mode string, templateString string) error {
 	if mode == "" {
 		return fmt.Errorf("モード名は空にできません")
@@ -22,39 +19,43 @@ func RegisterTemplate(mode string, templateString string) error {
 		return fmt.Errorf("テンプレート文字列は空にできません")
 	}
 
+	// 1. テンプレートの解析 (ここでコストの高い処理を実行)
+	tmpl, err := template.New(mode).Parse(templateString)
+	if err != nil {
+		return fmt.Errorf("モード %s のプロンプトテンプレート解析エラー: %w", mode, err)
+	}
+
 	mapMutex.Lock()
 	defer mapMutex.Unlock()
 
-	if _, exists := templateMap[mode]; exists {
-		// 既に存在するテンプレートの上書きを許可するかどうかは設計次第ですが、
-		// ここではエラーとして、重複登録を防ぎます。
-		return fmt.Errorf("モード %s のテンプレートは既に登録されています", mode)
+	if _, exists := parsedTemplateMap[mode]; exists {
+		// 初期化段階での重複登録を許可し、上書きしてもエラーにしないように変更
+		// 必要に応じてここでエラーを返すことも可能です。
+		// return fmt.Errorf("モード %s のテンプレートは既に登録されています", mode)
 	}
 
-	templateMap[mode] = templateString
+	// 2. 解析済みテンプレートをキャッシュ
+	parsedTemplateMap[mode] = tmpl
 	return nil
 }
 
-// GetPromptByMode は指定されたモードに対応するプロンプトテンプレート文字列を取得します。
-// ハードコードされた switch 文の代わりに、登録されたマップを参照します。
-// この関数はクライアントコード（Gemini）から呼び出されるため、公開が必要です。
-func GetPromptByMode(mode string) (string, error) {
+// GetParsedPromptByMode は指定されたモードに対応する解析済みテンプレートを取得します。
+func getParsedPromptByMode(mode string) (*template.Template, error) {
 	mapMutex.RLock()
 	defer mapMutex.RUnlock()
 
-	templateString, ok := templateMap[mode]
+	tmpl, ok := parsedTemplateMap[mode]
 	if !ok {
-		return "", fmt.Errorf("未対応のモードです。テンプレートが登録されていません: %s", mode)
+		return nil, fmt.Errorf("未対応のモードです。テンプレートが登録されていません: %s", mode)
 	}
 
-	return templateString, nil
+	return tmpl, nil
 }
 
 // BuildFullPrompt はテンプレートを取得し、入力内容を埋め込んだ最終プロンプト文字列を構築します。
-// pkg/ai/gemini/client.go の GenerateScript メソッドから呼び出される公開関数です。
-func BuildFullPrompt(inputContent []byte, mode string) (string, error) {
-	// 1. プロンプトのテンプレートを取得 (マップから参照)
-	promptTemplateString, err := GetPromptByMode(mode)
+func BuildFullPrompt(inputText string, mode string) (string, error) {
+	// 1. 解析済みテンプレートを取得 (キャッシュから取得するため高速)
+	tmpl, err := getParsedPromptByMode(mode)
 	if err != nil {
 		return "", err
 	}
@@ -63,19 +64,13 @@ func BuildFullPrompt(inputContent []byte, mode string) (string, error) {
 	// テンプレートの変数名 (InputText) は固定とします。
 	type InputData struct{ InputText string }
 
-	// テンプレートの解析
-	// Note: パフォーマンスのため、テンプレートは一度だけ解析し、キャッシュする方が望ましいですが、
-	// ここではシンプルさを優先します。
-	tmpl, err := template.New("narration_prompt").Parse(promptTemplateString)
-	if err != nil {
-		return "", fmt.Errorf("プロンプトテンプレートの解析エラー: %w", err)
-	}
-
 	// データの埋め込み
-	data := InputData{InputText: string(inputContent)}
+	data := InputData{InputText: inputText}
 	var fullPrompt bytes.Buffer
+
+	// Execute を実行するのみ
 	if err := tmpl.Execute(&fullPrompt, data); err != nil {
-		return "", fmt.Errorf("プロンプトへの入力埋め込みエラー: %w", err)
+		return "", fmt.Errorf("プロンプトへの入力埋め込みエラー (モード: %s): %w", mode, err)
 	}
 
 	return fullPrompt.String(), nil

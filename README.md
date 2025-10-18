@@ -14,7 +14,7 @@
 * **リトライ戦略:** ネットワークエラーや一時的なAPIエラーに対応するため、自動リトライロジック（`go-web-exact/pkg/retry`を使用）を内蔵しています。
 * **柔軟なプロンプトモード:** 特定タスク向けの**テンプレートベースのプロンプト構築機能**（`pkg/prompt`）と、自由なテキストをそのまま送る**汎用モード**をサポートします。プロンプト構築のロジックはCLIツール側（`cmd`）に存在します。
 
----
+-----
 
 ### 🚀 インストール
 
@@ -22,7 +22,7 @@ Goモジュールとしてプロジェクトに追加します。
 
 ```bash
 go get https://github.com/shouni/go-ai-client
-````
+```
 
 ### 🗝️ APIキーの設定
 
@@ -99,16 +99,17 @@ func main() {
     // ----------------------------------------------------------------
     // 1. テンプレートを使用する場合 (例: solo モード)
     // ----------------------------------------------------------------
-    inputContent := []byte("Go言語でAPIクライアントを作成する利点について教えてください。")
+    // BuildFullPrompt のシグネチャ変更に伴い、string型で定義
+    rawInput := "Go言語でAPIクライアントを作成する利点について教えてください。" 
     mode := "solo" 
     
-    // ★ 呼び出し元で finalPrompt を構築
-    finalPrompt, err := prompt.BuildFullPrompt(inputContent, mode)
+    // ★ 呼び出し元で finalPrompt を構築 (stringを渡す)
+    finalPrompt, err := prompt.BuildFullPrompt(rawInput, mode) 
     if err != nil {
         log.Fatalf("プロンプト構築エラー: %v", err)
     }
     
-    model := "gemini-1.5-flash"
+    model := "gemini-2.5-flash"
     
     // クライアントは最終プロンプト文字列のみを受け取る
     response, err := client.GenerateContent(ctx, finalPrompt, model)
@@ -135,13 +136,10 @@ func main() {
 | `pkg/ai/gemini` | Google Gemini API専用のクライアント実装。 |
 | `pkg/ai/gemini/client.go` | **Gemini APIクライアント**のコアロジック。**API通信、リトライ、レスポンス処理のみ**を担う。 |
 | `pkg/prompt` | プロンプトのテンプレートおよび構築ロジック。 |
-| `pkg/prompt/prompt.go` | **テンプレートベースのプロンプト定義**と、入力内容を埋め込む `BuildFullPrompt` 関数を提供。 |
+| `pkg/prompt/prompt.go` | **テンプレートベースのプロンプト定義**と、入力内容を埋め込む `BuildFullPrompt` 関数を提供。テンプレートは事前解析され、キャッシュされる。 |
 
 -----
 
 ### 📜 ライセンス (License)
 
 このプロジェクトは [MIT License](https://opensource.org/licenses/MIT) の下で公開されています。
-
-
-

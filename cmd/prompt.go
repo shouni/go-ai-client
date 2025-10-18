@@ -5,7 +5,6 @@ import (
 	_ "embed" // go:embed のためにアンダースコアインポート
 	"fmt"
 	"os"
-	"time"
 
 	"github.com/shouni/go-ai-client/pkg/prompt"
 	"github.com/spf13/cobra"
@@ -43,21 +42,26 @@ func newPromptCmd() *cobra.Command {
 				return err
 			}
 
-			// 2. モードフラグの検証 (RunEから削除済み)
-			// 3. タイムアウト設定とコンテキスト作成 (root.goで定義されたグローバル変数を使用)
-			timeoutDuration := time.Duration(timeout) * time.Second
-			ctx, cancel := context.WithTimeout(context.Background(), timeoutDuration)
-			defer cancel()
+			// 2. コンテキスト作成
+			// タイムアウト設定は generateAndOutput 内で行われるため、ここでは基本コンテキストを使用
+			ctx := context.Background()
+			// タイムアウト設定は generateAndOutput 内で行われますが、ここでは一応定義 (冗長)
+			// timeoutDuration := time.Duration(timeout) * time.Second
+			// ctx, cancel := context.WithTimeout(context.Background(), timeoutDuration)
+			// defer cancel()
 
-			// 4. 実行と出力 (root.goの共通ロジックを使用)
+			// 3. 実行と出力 (root.goの共通ロジックを使用)
 			return generateAndOutput(ctx, inputContent, promptMode, modelName)
 		},
 
 		Args: func(cmd *cobra.Command, args []string) error {
-			// RunEの前に、モードフラグの検証を行う
-			if _, err := prompt.GetPromptByMode(promptMode); err != nil {
-				return err
-			}
+			// ★ 修正: テンプレートの検証を BuildFullPrompt に任せるため、ここでは引数の有無のみチェック。
+			// テンプレートが登録されているかのチェックは init() で登録エラーがないか確認済みのため、
+			// ここでは省略するか、RunEで BuildFullPrompt のエラーに任せるのがシンプル。
+			// ただし、入力が必須でない場合はこのチェックも不要です。
+
+			// テンプレートモードでは入力コンテンツの有無を RunE がチェックします。
+			// ここではカスタムロジックを削除し、CobraのデフォルトArgs処理に任せる。
 			return nil
 		},
 	}
@@ -71,8 +75,8 @@ func newPromptCmd() *cobra.Command {
 // init はパッケージ初期化時にテンプレートを登録します。
 func init() {
 	// 開発者向け: この panic は、go:embed の設定ミスなど、ビルド時の致命的な問題を検出するためのものです。
-	// 実行時に発生した場合、main.go で適切に recover され、ユーザーフレンドリーなエラーメッセージに変換されることを想定しています。
 	safePanic := func(msg string) {
+		// エラーメッセージをstderrに出力してから panic
 		fmt.Fprintf(os.Stderr, "クリティカルエラー (prompt init): %s\n", msg)
 		panic(msg)
 	}

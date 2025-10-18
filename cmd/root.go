@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/shouni/go-ai-client/pkg/ai/gemini"
 	"github.com/shouni/go-ai-client/pkg/prompt"
@@ -58,38 +59,39 @@ func checkAPIKey() error {
 }
 
 // generateAndOutput は、Gemini APIを呼び出し、結果を標準出力に出力する共通ロジックです。
-// ★ 修正: プロンプト構築ロジックをクライアントから引き継ぎました。
 func generateAndOutput(ctx context.Context, inputContent []byte, subcommandMode, modelName string) error {
 	// 1. クライアントの初期化
-	client, err := gemini.NewClientFromEnv(ctx)
+	clientCtx, cancel := context.WithTimeout(ctx, time.Duration(timeout)*time.Second)
+	defer cancel()
+
+	client, err := gemini.NewClientFromEnv(clientCtx)
 	if err != nil {
 		return fmt.Errorf("Geminiクライアントの初期化に失敗しました: %w", err)
 	}
 
 	var finalPrompt string
 	modeDisplay := subcommandMode
+	inputText := string(inputContent) // ★ 修正: []byte を string に変換
 
 	// 2. プロンプトの構築ロジック (クライアント外の責務)
 	if subcommandMode == "generic" {
 		// Genericモード: 入力内容をそのままプロンプトとする
-		finalPrompt = string(inputContent)
+		finalPrompt = inputText
 		modeDisplay = "テンプレートなし (generic)" // 表示用文字列を変更
 
 	} else {
 		// Promptモード: テンプレートを使用して最終プロンプトを構築
-		// subcommandMode には "solo" や "dialogue" などのテンプレート名が入る
-		finalPrompt, err = prompt.BuildFullPrompt(inputContent, subcommandMode)
+		finalPrompt, err = prompt.BuildFullPrompt(inputText, subcommandMode)
 		if err != nil {
 			return fmt.Errorf("failed to build full prompt (mode: %s): %w", subcommandMode, err)
 		}
-		// modeDisplay は subcommandMode の値 ("solo"など) のまま
 	}
 
 	fmt.Printf("モデル %s で応答を生成中 (モード: %s, Timeout: %d秒)...\n", modelName, modeDisplay, timeout)
 
-	// 3. 応答の生成 (★ 修正: 最終的なプロンプト文字列を渡す)
+	// 3. 応答の生成 (最終的なプロンプト文字列を渡す)
 	// クライアントのシグネチャ: GenerateContent(ctx, finalPrompt string, modelName string)
-	resp, err := client.GenerateContent(ctx, finalPrompt, modelName)
+	resp, err := client.GenerateContent(clientCtx, finalPrompt, modelName)
 
 	if err != nil {
 		return fmt.Errorf("API処理中にエラーが発生しました: %w", err)
