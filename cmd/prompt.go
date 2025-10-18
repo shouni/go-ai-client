@@ -3,8 +3,8 @@ package cmd
 import (
 	"context"
 	_ "embed" // go:embed のためにアンダースコアインポート
-	"fmt"     // init関数でos.Exit(1)を使うために追加
-	"os"      // init関数でos.Exit(1)を使うために追加
+	"fmt"
+	"os"
 	"time"
 
 	"github.com/shouni/go-ai-client/pkg/prompt"
@@ -44,11 +44,6 @@ func newPromptCmd() *cobra.Command {
 			}
 
 			// 2. モードフラグの検証 (Argsで既に検証済みのため削除)
-			// 以前のコード:
-			// if _, err := prompt.GetPromptByMode(promptMode); err != nil {
-			//    return err
-			// }
-
 			// 3. タイムアウト設定とコンテキスト作成 (root.goで定義されたグローバル変数を使用)
 			timeoutDuration := time.Duration(timeout) * time.Second
 			ctx, cancel := context.WithTimeout(context.Background(), timeoutDuration)
@@ -59,7 +54,7 @@ func newPromptCmd() *cobra.Command {
 		},
 
 		Args: func(cmd *cobra.Command, args []string) error {
-			// RunEの前に、モードフラグの検証を行う (既存の検証ロジックを維持)
+			// RunEの前に、モードフラグの検証を行う
 			if _, err := prompt.GetPromptByMode(promptMode); err != nil {
 				return err
 			}
@@ -75,25 +70,25 @@ func newPromptCmd() *cobra.Command {
 
 // init はパッケージ初期化時にテンプレートを登録します。
 func init() {
-	// ユーティリティ関数: エラー発生時にエラーメッセージを出力し、終了コード1でプロセスを終了する
-	safeExit := func(msg string) {
+	// ユーティリティ関数: エラー発生時にパニックを起こす (os.Exitからpanicへ変更)
+	safePanic := func(msg string) {
 		fmt.Fprintf(os.Stderr, "クリティカルエラー (prompt init): %s\n", msg)
-		os.Exit(1)
+		panic(msg) // panic に詳細メッセージを含める
 	}
 
 	// 1. Soloモードのテンプレート登録
 	if ZundamonSoloPrompt == "" {
-		safeExit("ソロテンプレートの埋め込みが失敗しているか、ファイルが空です。")
+		safePanic("ソロテンプレートの埋め込みが失敗しているか、ファイルが空です。")
 	}
 	if err := prompt.RegisterTemplate("solo", ZundamonSoloPrompt); err != nil {
-		safeExit(fmt.Sprintf("ソロテンプレートの登録に失敗: %v", err))
+		safePanic(fmt.Sprintf("ソロテンプレートの登録に失敗: %v", err))
 	}
 
 	// 2. Dialogueモードのテンプレート登録
 	if ZundaMetanDialoguePrompt == "" {
-		safeExit("対話テンプレートの埋め込みが失敗しているか、ファイルが空です。")
+		safePanic("対話テンプレートの埋め込みが失敗しているか、ファイルが空です。")
 	}
 	if err := prompt.RegisterTemplate("dialogue", ZundaMetanDialoguePrompt); err != nil {
-		safeExit(fmt.Sprintf("対話テンプレートの登録に失敗: %v", err))
+		safePanic(fmt.Sprintf("対話テンプレートの登録に失敗: %v", err))
 	}
 }
