@@ -1,4 +1,3 @@
-//module go-ai-client
 module github.com/shouni/go-ai-client
 
 go 1.25
