@@ -43,7 +43,7 @@ func newPromptCmd() *cobra.Command {
 				return err
 			}
 
-			// 2. モードフラグの検証 (Argsで既に検証済みのため削除)
+			// 2. モードフラグの検証 (RunEから削除済み)
 			// 3. タイムアウト設定とコンテキスト作成 (root.goで定義されたグローバル変数を使用)
 			timeoutDuration := time.Duration(timeout) * time.Second
 			ctx, cancel := context.WithTimeout(context.Background(), timeoutDuration)
@@ -70,10 +70,11 @@ func newPromptCmd() *cobra.Command {
 
 // init はパッケージ初期化時にテンプレートを登録します。
 func init() {
-	// ユーティリティ関数: エラー発生時にパニックを起こす (os.Exitからpanicへ変更)
+	// 開発者向け: この panic は、go:embed の設定ミスなど、ビルド時の致命的な問題を検出するためのものです。
+	// 実行時に発生した場合、main.go で適切に recover され、ユーザーフレンドリーなエラーメッセージに変換されることを想定しています。
 	safePanic := func(msg string) {
 		fmt.Fprintf(os.Stderr, "クリティカルエラー (prompt init): %s\n", msg)
-		panic(msg) // panic に詳細メッセージを含める
+		panic(msg)
 	}
 
 	// 1. Soloモードのテンプレート登録

@@ -57,8 +57,8 @@ func checkAPIKey() error {
 }
 
 // generateAndOutput は、Gemini APIを呼び出し、結果を標準出力に出力する共通ロジックです。
-// mode パラメータは、promptCmdではテンプレートモード、genericCmdでは "generic" という固定文字列が入ります。
-func generateAndOutput(ctx context.Context, inputContent []byte, mode, modelName string) error {
+// subcommandMode パラメータは、promptCmdではテンプレートモード、genericCmdでは "generic" という固定文字列が入ります。
+func generateAndOutput(ctx context.Context, inputContent []byte, subcommandMode, modelName string) error {
 	// 1. クライアントの初期化
 	client, err := gemini.NewClientFromEnv(ctx)
 	if err != nil {
@@ -67,16 +67,17 @@ func generateAndOutput(ctx context.Context, inputContent []byte, mode, modelName
 
 	// 2. 応答の生成
 	// 表示用モード名の改善
-	modeDisplay := mode
-	if mode == "generic" {
+	modeDisplay := subcommandMode
+	if subcommandMode == "generic" {
 		modeDisplay = "テンプレートなし (generic)" // 表示用文字列を変更
 	}
 
 	fmt.Printf("モデル %s で応答を生成中 (モード: %s, Timeout: %d秒)...\n", modelName, modeDisplay, timeout)
 
 	// クライアントに渡すモードを設定 ("generic" の場合はテンプレートをスキップするため "" を渡す)
-	effectivePromptMode := mode
-	if mode == "generic" {
+	// ★修正点: 引数名を subcommandMode に変更し、内部変数も effectivePromptMode にリネーム
+	effectivePromptMode := subcommandMode
+	if subcommandMode == "generic" {
 		effectivePromptMode = "" // テンプレートを使用しないことを示すために空文字列を渡す
 	}
 
@@ -106,7 +107,7 @@ func Execute() error {
 func init() {
 	// ルートコマンドに PersistentFlags (全サブコマンドで共通) を設定
 	rootCmd.PersistentFlags().IntVarP(&timeout, "timeout", "t", 60, "APIリクエストのタイムアウト時間 (秒)")
-	rootCmd.PersistentFlags().StringVarP(&modelName, "model", "m", "gemini-2.5-flash", "使用するGeminiモデル名")
+	rootCmd.PersistentFlags().StringVarP(&modelName, "model", "m", "gemini-2.5-flash", "使用するGeminiモデル名 (例: gemini-2.5-pro, gemini-1.5-pro)")
 
 	// サブコマンドの追加 (他ファイルで定義されたコマンドをここで登録)
 	rootCmd.AddCommand(newPromptCmd())
