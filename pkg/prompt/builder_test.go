@@ -9,9 +9,6 @@ import (
 // --- テスト設定: アプリケーションの init() をエミュレート ---
 
 // テスト用のダミーテンプレート定義
-// 実際のテンプレートの内容は分からないため、テストで検証したい固有の文字列と
-// 埋め込みタグを模倣したシンプルな構造で定義する。
-// NOTE: 実際の builder.go のテンプレート内のタグに合わせて InputText を使用する。
 const testSoloTemplate = `
 一人の話者によるモノローグ形式のスクリプトに変換
 [入力テキスト]
@@ -27,7 +24,7 @@ const testDialogueTemplate = `
 // TestMain 関数: 全テスト実行前に一度だけ実行され、テンプレートを登録する
 func TestMain(m *testing.M) {
 	// テンプレートをテスト開始前に登録する
-	// 本来のアプリケーションで登録される「solo」と「dialogue」を登録
+	// RegisterTemplate はテンプレートの解析とキャッシュも行うようになりました。
 	if err := RegisterTemplate("solo", testSoloTemplate); err != nil {
 		// 登録失敗は致命的エラー
 		panic("Solo テンプレートのテスト登録に失敗: " + err.Error())
@@ -44,59 +41,16 @@ func TestMain(m *testing.M) {
 	os.Exit(code)
 }
 
-// --- 既存のテストロジック（修正なし） ---
-
-// TestGetPromptByMode は、モードに応じたテンプレートが正しく取得されるか、および未対応モードでエラーが返されるかを検証します。
-func TestGetPromptByMode(t *testing.T) {
-	// NOTE: このテストは、TestMain で登録されたダミーテンプレートを使用します。
-	tests := []struct {
-		name              string
-		mode              string
-		wantErr           bool
-		expectedSubstring string // テンプレートが正しく切り替わっていることを証明する固有の文字列
-	}{
-		{
-			name:              "Soloモードの取得成功",
-			mode:              "solo",
-			wantErr:           false,
-			expectedSubstring: "一人の話者によるモノローグ形式のスクリプトに変換",
-		},
-		{
-			name:              "Dialogueモードの取得成功",
-			mode:              "dialogue",
-			wantErr:           false,
-			expectedSubstring: "二人の話者（ずんだもん、めたん）による対話スクリプト",
-		},
-		{
-			name:    "未対応モードでエラー",
-			mode:    "unsupported_mode",
-			wantErr: true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result, err := GetPromptByMode(tt.mode)
-
-			if (err != nil) != tt.wantErr {
-				// 期待値とエラー状態が不一致の場合、エラー内容も出力
-				t.Fatalf("FAIL: GetPromptByMode(%s) エラー状態が期待値と不一致\n  got error: %v, want error: %v", tt.mode, err, tt.wantErr)
-			}
-
-			// エラーがない場合のみ、内容を検証
-			if !tt.wantErr && !strings.Contains(result, tt.expectedSubstring) {
-				t.Errorf("FAIL: プロンプト内容にモード固有の文字列が含まれていません。\n  Got: %q\n  Want Substring: %q", result, tt.expectedSubstring)
-			}
-		})
-	}
-}
+// --- TestGetPromptByMode は非公開関数になったため削除（または、非公開関数をテストしたい場合は getParsedPromptByMode のテストに置き換え） ---
 
 // TestBuildFullPrompt_Success は、テンプレートへの入力埋め込みとモードの選択が成功するかテストします。
 func TestBuildFullPrompt_Success(t *testing.T) {
 	rawInput := "AIは人間の生活を豊かにします。"
-	testInput := []byte(rawInput)
+	// ★ 修正: テスト入力の型を string に変更
+	testInput := rawInput
+
 	// builder.goのテンプレート内のタグに合わせて期待値を設定
-	expectedInputLine := "[入力テキスト]\n" + rawInput // NOTE: ダミーテンプレートに合わせて\nの後の文字列を期待値とする
+	expectedInputLine := "[入力テキスト]\n" + rawInput
 
 	tests := []struct {
 		name string
@@ -118,6 +72,7 @@ func TestBuildFullPrompt_Success(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			// ★ 修正: BuildFullPrompt に string を渡す
 			finalPrompt, err := BuildFullPrompt(testInput, tt.mode)
 
 			if err != nil {
@@ -137,19 +92,21 @@ func TestBuildFullPrompt_Success(t *testing.T) {
 	}
 }
 
-// TestBuildFullPrompt_ErrorPropagation は、GetPromptByModeで発生したエラーが伝播するかテストします。
+// TestBuildFullPrompt_ErrorPropagation は、無効なモードでエラーが返されるかテストします。
 func TestBuildFullPrompt_ErrorPropagation(t *testing.T) {
-	testInput := []byte("dummy")
+	// ★ 修正: テスト入力の型を string に変更
+	testInput := "dummy input"
 	invalidMode := "unsupported_mode"
 
 	t.Run("無効なモードの場合にエラーを返すこと", func(t *testing.T) {
+		// ★ 修正: BuildFullPrompt に string を渡す
 		finalPrompt, err := BuildFullPrompt(testInput, invalidMode)
 
 		if err == nil {
 			t.Fatal("FAIL: 無効なモードの場合、エラーが返されるべきです")
 		}
 
-		// エラーが GetPromptByMode から正しく伝播しているか検証
+		// エラーが GetParsedPromptByMode から正しく伝播しているか検証
 		expectedErrorSubstring := "未対応のモードです"
 		if !strings.Contains(err.Error(), expectedErrorSubstring) {
 			t.Errorf("FAIL: 予期しないエラーメッセージ\n  got: %q\n  want substring: %q", err.Error(), expectedErrorSubstring)

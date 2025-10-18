@@ -10,7 +10,6 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	"github.com/shouni/go-ai-client/pkg/prompt"
 	"github.com/shouni/go-web-exact/pkg/retry"
 )
 
@@ -18,14 +17,12 @@ import (
 const (
 	// デフォルトのリトライ回数
 	DefaultMaxRetries = 3
-	// DefaultRequestTimeout は genai.ClientConfig に存在しないため、コメントアウトまたは削除します。
-	// 代わりに、API呼び出しのタイムアウトは context.Context で制御されます。
-	// DefaultRequestTimeout = 30 * time.Second
+	// API呼び出しのタイムアウトは context.Context で制御されます。
 )
 
 // GenerativeModel is the interface that defines the core operations this client provides.
 type GenerativeModel interface {
-	GenerateContent(ctx context.Context, inputContent []byte, mode string, modelName string) (*Response, error)
+	GenerateContent(ctx context.Context, prompt string, modelName string) (*Response, error)
 }
 
 // Client manages communication with the Gemini API. It implements the GenerativeModel interface.
@@ -95,30 +92,17 @@ func NewClientFromEnv(ctx context.Context) (*Client, error) {
 }
 
 // GenerateContent sends a prompt to the Gemini model with a retry mechanism.
-func (c *Client) GenerateContent(ctx context.Context, inputContent []byte, mode string, modelName string) (*Response, error) {
+func (c *Client) GenerateContent(ctx context.Context, finalPrompt string, modelName string) (*Response, error) {
 
-	var finalPrompt string
-	var err error
-
-	// 1. モードが空の場合はテンプレート構築をスキップする
-	if mode == "" {
-		// generic モード: テンプレートを使用せず、入力内容をそのままプロンプトとする
-		finalPrompt = string(inputContent)
-
-	} else {
-		// prompt モード: テンプレートを使用して最終プロンプトを構築
-		// mode には "solo" や "dialogue" などのテンプレート名が入る
-		finalPrompt, err = prompt.BuildFullPrompt(inputContent, mode)
-		if err != nil {
-			// エラーメッセージはテンプレート名を含んでいるため、そのまま返す
-			return nil, fmt.Errorf("failed to build full prompt: %w", err)
-		}
+	if finalPrompt == "" {
+		return nil, errors.New("prompt content cannot be empty")
 	}
 
 	var responseText string
-	contents := promptToContents(finalPrompt) // 文字列から Content 構造体を構築
+	// 文字列から Content 構造体を構築 (クライアントの責務はここまで)
+	contents := promptToContents(finalPrompt)
 
-	// 2. API呼び出しとレスポンス処理を行う操作関数 (retry.Operation型に準拠)
+	// 1. API呼び出しとレスポンス処理を行う操作関数 (retry.Operation型に準拠)
 	op := func() error {
 		// Context には cmd/root.go で設定されたタイムアウトが適用される
 		resp, err := c.client.Models.GenerateContent(ctx, modelName, contents, nil)
@@ -137,7 +121,7 @@ func (c *Client) GenerateContent(ctx context.Context, inputContent []byte, mode 
 		return nil
 	}
 
-	// 3. shouldRetryFn: API固有の一時的エラー判定ロジック (retry.ShouldRetryFunc型に準拠)
+	// 2. shouldRetryFn: API固有の一時的エラー判定ロジック (retry.ShouldRetryFunc型に準拠)
 	shouldRetryFn := func(err error) bool {
 		var apiErr *APIResponseError
 		if errors.As(err, &apiErr) {
@@ -147,8 +131,8 @@ func (c *Client) GenerateContent(ctx context.Context, inputContent []byte, mode 
 		return shouldRetry(err)
 	}
 
-	// 4. 汎用リトライサービスを利用して操作を実行
-	err = retry.Do(
+	// 3. 汎用リトライサービスを利用して操作を実行
+	err := retry.Do(
 		ctx,
 		c.retryConfig,
 		fmt.Sprintf("Gemini API call to %s", modelName),

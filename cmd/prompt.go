@@ -3,9 +3,9 @@ package cmd
 import (
 	"context"
 	_ "embed" // go:embed のためにアンダースコアインポート
+	"errors" // errors.New のために必要
 	"fmt"
 	"os"
-	"time"
 
 	"github.com/shouni/go-ai-client/pkg/prompt"
 	"github.com/spf13/cobra"
@@ -43,23 +43,21 @@ func newPromptCmd() *cobra.Command {
 				return err
 			}
 
-			// 2. モードフラグの検証 (RunEから削除済み)
-			// 3. タイムアウト設定とコンテキスト作成 (root.goで定義されたグローバル変数を使用)
-			timeoutDuration := time.Duration(timeout) * time.Second
-			ctx, cancel := context.WithTimeout(context.Background(), timeoutDuration)
-			defer cancel()
+			// ★ 修正: テンプレートモードでの入力必須チェックを追加
+			if len(inputContent) == 0 {
+				return errors.New("テンプレートモード (prompt) は、処理するための入力テキストを必要とします。コマンドライン引数または標準入力で提供してください。")
+			}
 
-			// 4. 実行と出力 (root.goの共通ロジックを使用)
+			// 2. コンテキスト作成
+			// generateAndOutput 側でタイムアウト設定が適用されるため、ここでは基本コンテキストを使用
+			ctx := context.Background()
+
+			// 3. 実行と出力 (root.goの共通ロジックを使用)
+			// inputContentは generateAndOutput 内で string に変換され、prompt.BuildFullPrompt に渡される
 			return generateAndOutput(ctx, inputContent, promptMode, modelName)
 		},
 
-		Args: func(cmd *cobra.Command, args []string) error {
-			// RunEの前に、モードフラグの検証を行う
-			if _, err := prompt.GetPromptByMode(promptMode); err != nil {
-				return err
-			}
-			return nil
-		},
+		Args: cobra.ArbitraryArgs,
 	}
 
 	// promptCmd のみに 'mode' フラグを設定
@@ -70,26 +68,27 @@ func newPromptCmd() *cobra.Command {
 
 // init はパッケージ初期化時にテンプレートを登録します。
 func init() {
-	// 開発者向け: この panic は、go:embed の設定ミスなど、ビルド時の致命的な問題を検出するためのものです。
-	// 実行時に発生した場合、main.go で適切に recover され、ユーザーフレンドリーなエラーメッセージに変換されることを想定しています。
-	safePanic := func(msg string) {
-		fmt.Fprintf(os.Stderr, "クリティカルエラー (prompt init): %s\n", msg)
-		panic(msg)
+	failOnInit := func(msg string, err error) {
+		fmt.Fprintf(os.Stderr, "エラー: CLI初期化に失敗しました: %s\n", msg)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "詳細: %v\n", err)
+		}
+		os.Exit(1) // 非ゼロの終了コードで終了
 	}
 
 	// 1. Soloモードのテンプレート登録
 	if ZundamonSoloPrompt == "" {
-		safePanic("ソロテンプレートの埋め込みが失敗しているか、ファイルが空です。")
+		failOnInit("ソロテンプレートの埋め込みが失敗しているか、ファイルが空です。", nil)
 	}
 	if err := prompt.RegisterTemplate("solo", ZundamonSoloPrompt); err != nil {
-		safePanic(fmt.Sprintf("ソロテンプレートの登録に失敗: %v", err))
+		failOnInit("ソロテンプレートの登録に失敗", err)
 	}
 
 	// 2. Dialogueモードのテンプレート登録
 	if ZundaMetanDialoguePrompt == "" {
-		safePanic("対話テンプレートの埋め込みが失敗しているか、ファイルが空です。")
+		failOnInit("対話テンプレートの埋め込みが失敗しているか、ファイルが空です。", nil)
 	}
 	if err := prompt.RegisterTemplate("dialogue", ZundaMetanDialoguePrompt); err != nil {
-		safePanic(fmt.Sprintf("対話テンプレートの登録に失敗: %v", err))
+		failOnInit("対話テンプレートの登録に失敗", err)
 	}
 }
