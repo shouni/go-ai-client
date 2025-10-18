@@ -143,8 +143,5 @@ func main() {
 
 このプロジェクトは [MIT License](https://opensource.org/licenses/MIT) の下で公開されています。
 
-```
-```
-
 
 
