@@ -9,7 +9,7 @@ import (
 	"strings"
 
 	"github.com/shouni/go-ai-client/pkg/ai/gemini"
-	"github.com/shouni/go-ai-client/pkg/prompt"
+	// "github.com/shouni/go-ai-client/pkg/prompt" // テンプレート登録ロジック削除により不要
 	"github.com/spf13/cobra"
 )
 
@@ -67,14 +67,19 @@ func generateAndOutput(ctx context.Context, inputContent []byte, mode, modelName
 	}
 
 	// 2. 応答の生成
-	fmt.Printf("モデル %s で応答を生成中 (モード: %s, Timeout: %d秒)...\n", modelName, mode, timeout)
+	modeDisplay := mode
+	if mode == "generic" {
+		modeDisplay = "テンプレートなし (generic)" // 表示用文字列を変更
+	}
 
+	fmt.Printf("モデル %s で応答を生成中 (モード: %s, Timeout: %d秒)...\n", modelName, modeDisplay, timeout)
+
+	// クライアントに渡すモードを設定 ("generic" の場合はテンプレートをスキップするため "" を渡す)
 	modeForClient := mode
 	if mode == "generic" {
 		modeForClient = "" // テンプレートを使用しないことを示すために空文字列を渡す
 	}
 
-	//	resp, err := client.GenerateContent(ctx, inputContent, mode, modelName)
 	resp, err := client.GenerateContent(ctx, inputContent, modeForClient, modelName)
 
 	if err != nil {
@@ -83,7 +88,7 @@ func generateAndOutput(ctx context.Context, inputContent []byte, mode, modelName
 
 	// 3. 結果の出力
 	fmt.Println("\n" + separator)
-	fmt.Printf("|| 応答 (モデル: %s, モード: %s) ||\n", modelName, mode)
+	fmt.Printf("|| 応答 (モデル: %s, モード: %s) ||\n", modelName, modeDisplay) // ★修正点: 表示用モード名を使用
 	fmt.Println(separator)
 	fmt.Println(resp.Text)
 	fmt.Println(separator)
@@ -96,7 +101,7 @@ func Execute() error {
 	return rootCmd.Execute()
 }
 
-// init() はアプリケーション起動時に自動的に実行され、フラグとプロンプトテンプレートを設定します。
+// init() はアプリケーション起動時に自動的に実行され、フラグを設定します。
 func init() {
 	// ルートコマンドに PersistentFlags (全サブコマンドで共通) を設定
 	rootCmd.PersistentFlags().IntVarP(&timeout, "timeout", "t", 60, "APIリクエストのタイムアウト時間 (秒)")
@@ -105,32 +110,4 @@ func init() {
 	// サブコマンドの追加 (他ファイルで定義されたコマンドをここで登録)
 	rootCmd.AddCommand(newPromptCmd())
 	rootCmd.AddCommand(newGenericCmd())
-
-	// 埋め込まれた string 変数を使って prompt パッケージに登録する
-	registerPromptTemplates()
-}
-
-// registerPromptTemplates は、埋め込まれた string 変数からテンプレートを読み込み、pkg/prompt に登録します。
-func registerPromptTemplates() {
-	// ユーティリティ関数: エラー発生時にエラーメッセージを出力し、終了コード1でプロセスを終了する
-	safeExit := func(msg string) {
-		fmt.Fprintf(os.Stderr, "クリティカルエラー (起動時): %s\n", msg)
-		os.Exit(1)
-	}
-
-	// 1. Soloモードのテンプレート登録
-	if ZundamonSoloPrompt == "" {
-		safeExit("ソロテンプレートの埋め込みが失敗しているか、ファイルが空です。")
-	}
-	if err := prompt.RegisterTemplate("solo", ZundamonSoloPrompt); err != nil {
-		safeExit(fmt.Sprintf("ソロテンプレートの登録に失敗: %v", err))
-	}
-
-	// 2. Dialogueモードのテンプレート登録
-	if ZundaMetanDialoguePrompt == "" {
-		safeExit("対話テンプレートの埋め込みが失敗しているか、ファイルが空です。")
-	}
-	if err := prompt.RegisterTemplate("dialogue", ZundaMetanDialoguePrompt); err != nil {
-		safeExit(fmt.Sprintf("対話テンプレートの登録に失敗: %v", err))
-	}
 }
