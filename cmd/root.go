@@ -75,7 +75,6 @@ func generateAndOutput(ctx context.Context, inputContent []byte, subcommandMode,
 	fmt.Printf("モデル %s で応答を生成中 (モード: %s, Timeout: %d秒)...\n", modelName, modeDisplay, timeout)
 
 	// クライアントに渡すモードを設定 ("generic" の場合はテンプレートをスキップするため "" を渡す)
-	// ★修正点: 引数名を subcommandMode に変更し、内部変数も effectivePromptMode にリネーム
 	effectivePromptMode := subcommandMode
 	if subcommandMode == "generic" {
 		effectivePromptMode = "" // テンプレートを使用しないことを示すために空文字列を渡す
@@ -107,7 +106,7 @@ func Execute() error {
 func init() {
 	// ルートコマンドに PersistentFlags (全サブコマンドで共通) を設定
 	rootCmd.PersistentFlags().IntVarP(&timeout, "timeout", "t", 60, "APIリクエストのタイムアウト時間 (秒)")
-	rootCmd.PersistentFlags().StringVarP(&modelName, "model", "m", "gemini-2.5-flash", "使用するGeminiモデル名 (例: gemini-2.5-pro, gemini-1.5-pro)")
+	rootCmd.PersistentFlags().StringVarP(&modelName, "model", "m", "gemini-2.5-flash", "使用するGeminiモデル名")
 
 	// サブコマンドの追加 (他ファイルで定義されたコマンドをここで登録)
 	rootCmd.AddCommand(newPromptCmd())

@@ -12,7 +12,7 @@
 
 * **Gemini API クライアント:** Google Gemini APIとの基本的なやり取りを行うためのシンプルで使いやすいクライアントを提供します。
 * **リトライ戦略:** ネットワークエラーや一時的なAPIエラーに対応するため、自動リトライロジック（`go-web-exact/pkg/retry`を使用）を内蔵しています。
-* **テンプレートプロンプト:** スクリプト生成などの特定タスク向けに、**Goの`text/template`** を利用したテンプレートベースのプロンプト構成を提供します。
+* **柔軟なプロンプトモード:** 特定タスク向けの**テンプレートベースのプロンプト**（`prompt`コマンド）と、自由なテキストをそのまま送る**汎用モード**（`generic`コマンド）をサポートします。
 
 ---
 
@@ -21,7 +21,7 @@
 Goモジュールとしてプロジェクトに追加します。
 
 ```bash
-go get [github.com/shouni/go-ai-client](https://github.com/shouni/go-ai-client)
+go get https://github.com/shouni/go-ai-client
 ````
 
 ### 🗝️ APIキーの設定
@@ -48,21 +48,35 @@ CLIツールとしてビルドし、コマンドラインで直接使用しま�
 # ビルド
 go build -o bin/ai-client
 
-# 実行例 1: soloモードでナレーションスクリプトを生成
-./bin/ai-client "地球温暖化の主要な原因とその対策について、簡潔に説明してください。" -d solo 
+# 実行例 1: テンプレートを使用 (prompt コマンド)
+# soloモードでナレーションスクリプトを生成
+./bin/ai-client prompt "地球温暖化の主要な原因とその対策について、簡潔に説明してください。" -d solo 
 
-# 実行例 2: dialogueモードで対話スクリプトを生成（モデル名も指定）
-cat input.txt | ./bin/ai-client -d dialogue -m gemini-1.5-pro
+# 実行例 2: テンプレートを使用 (dialogue コマンド)
+# dialogueモードで対話スクリプトを生成（モデル名も指定）
+cat input.txt | ./bin/ai-client prompt -d dialogue -m gemini-2.5-flash
+
+# 実行例 3: テンプレートを使用しない (generic コマンド)
+# 自由なテキストをそのままプロンプトとして送信
+./bin/ai-client generic "AI技術が社会に与えるポジティブな影響と、リスクについて議論してください。"
 
 # 主要なフラグ:
-# -d, --mode: 生成するスクリプトのモード (solo, dialogue)
-# -m, --model: 使用するGeminiモデル名 (例: gemini-1.5-flash)
+# -d, --mode (promptコマンド専用): 生成するスクリプトのモード (solo, dialogue)
+# -m, --model: 使用するGeminiモデル名
 # -t, --timeout: 全体のリクエストタイムアウト時間 (秒)
 ```
 
 #### 2\. Goコード内でのクライアント使用
 
-クライアントは、入力内容とモードを受け取り、内部でテンプレート処理を行います。
+クライアントは、入力内容とモードを受け取り、内部でテンプレート処理の有無を判断します。
+
+**【テンプレートを使用する場合】**
+
+`mode` に登録済みのテンプレート名（`"solo"` や `"dialogue"`）を指定します。
+
+**【テンプレートを使用しない場合（genericに相当）】**
+
+`mode` に**空文字列 (`""`)** を指定することで、`inputContent` をそのままプロンプトとして API に送信できます。
 
 ```go
 package main
@@ -77,21 +91,20 @@ import (
 )
 
 func main() {
-    // コンテキストにタイムアウトを設定 (CLIの -t フラグに相当)
     ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
     defer cancel()
 
-    // 環境変数からクライアントを初期化
     client, err := gemini.NewClientFromEnv(ctx)
     if err != nil {
        log.Fatalf("クライアント初期化エラー: %v", err)
     }
 
+    // テンプレートを使用しない場合の例
     inputContent := []byte("Go言語でAPIクライアントを作成する利点について教えてください。")
-    mode := "solo" // 'solo' または 'dialogue'
+    mode := "" // テンプレートを使用しないため、空文字列を指定
     model := "gemini-1.5-flash"
     
-    // コンテンツ生成 (入力データとモードを渡し、内部でテンプレートを構築)
+    // コンテンツ生成 (内部で mode="" を検知し、テンプレート処理をスキップ)
     response, err := client.GenerateContent(ctx, inputContent, mode, model)
     if err != nil {
        log.Fatalf("コンテンツ生成エラー: %v", err)
@@ -109,7 +122,7 @@ func main() {
 | ディレクトリ/ファイル | 概要 |
 | :--- | :--- |
 | `pkg/ai/gemini` | Google Gemini API専用のクライアント実装。 |
-| `pkg/ai/gemini/client.go` | **Gemini APIクライアント**のコアロジック。リトライ機能内蔵。|
+| `pkg/ai/gemini/client.go` | **Gemini APIクライアント**のコアロジック。`mode=""`を検知し、テンプレート処理をスキップする機能を含む。 |
 | `pkg/prompt` | プロンプトのテンプレートおよび構築ロジック。 |
 | `pkg/prompt/prompt.go` | **テンプレートベースのプロンプト定義**と、入力内容を埋め込む `BuildFullPrompt` 関数を提供。 |
 
