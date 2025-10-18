@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/shouni/go-ai-client/pkg/ai/gemini"
+	"github.com/shouni/go-ai-client/pkg/prompt"
 	"github.com/spf13/cobra"
 )
 
@@ -57,7 +58,7 @@ func checkAPIKey() error {
 }
 
 // generateAndOutput は、Gemini APIを呼び出し、結果を標準出力に出力する共通ロジックです。
-// subcommandMode パラメータは、promptCmdではテンプレートモード、genericCmdでは "generic" という固定文字列が入ります。
+// ★ 修正: プロンプト構築ロジックをクライアントから引き継ぎました。
 func generateAndOutput(ctx context.Context, inputContent []byte, subcommandMode, modelName string) error {
 	// 1. クライアントの初期化
 	client, err := gemini.NewClientFromEnv(ctx)
@@ -65,28 +66,36 @@ func generateAndOutput(ctx context.Context, inputContent []byte, subcommandMode,
 		return fmt.Errorf("Geminiクライアントの初期化に失敗しました: %w", err)
 	}
 
-	// 2. 応答の生成
-	// 表示用モード名の改善
+	var finalPrompt string
 	modeDisplay := subcommandMode
+
+	// 2. プロンプトの構築ロジック (クライアント外の責務)
 	if subcommandMode == "generic" {
+		// Genericモード: 入力内容をそのままプロンプトとする
+		finalPrompt = string(inputContent)
 		modeDisplay = "テンプレートなし (generic)" // 表示用文字列を変更
+
+	} else {
+		// Promptモード: テンプレートを使用して最終プロンプトを構築
+		// subcommandMode には "solo" や "dialogue" などのテンプレート名が入る
+		finalPrompt, err = prompt.BuildFullPrompt(inputContent, subcommandMode)
+		if err != nil {
+			return fmt.Errorf("failed to build full prompt (mode: %s): %w", subcommandMode, err)
+		}
+		// modeDisplay は subcommandMode の値 ("solo"など) のまま
 	}
 
 	fmt.Printf("モデル %s で応答を生成中 (モード: %s, Timeout: %d秒)...\n", modelName, modeDisplay, timeout)
 
-	// クライアントに渡すモードを設定 ("generic" の場合はテンプレートをスキップするため "" を渡す)
-	effectivePromptMode := subcommandMode
-	if subcommandMode == "generic" {
-		effectivePromptMode = "" // テンプレートを使用しないことを示すために空文字列を渡す
-	}
-
-	resp, err := client.GenerateContent(ctx, inputContent, effectivePromptMode, modelName)
+	// 3. 応答の生成 (★ 修正: 最終的なプロンプト文字列を渡す)
+	// クライアントのシグネチャ: GenerateContent(ctx, finalPrompt string, modelName string)
+	resp, err := client.GenerateContent(ctx, finalPrompt, modelName)
 
 	if err != nil {
 		return fmt.Errorf("API処理中にエラーが発生しました: %w", err)
 	}
 
-	// 3. 結果の出力
+	// 4. 結果の出力
 	fmt.Println("\n" + separator)
 	fmt.Printf("|| 応答 (モデル: %s, モード: %s) ||\n", modelName, modeDisplay) // 表示用モード名を使用
 	fmt.Println(separator)
