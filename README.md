@@ -1,4 +1,4 @@
-# go-ai-client
+# Go Ai Client
 
 [![Language](https://img.shields.io/badge/Language-Go-blue)](https://golang.org/)
 [![Go Version](https://img.shields.io/github/go-mod/go-version/shouni/go-ai-client)](https://golang.org/)
