@@ -1,4 +1,4 @@
-# Go Ai Client
+# Go AI Client
 
 [![Language](https://img.shields.io/badge/Language-Go-blue)](https://golang.org/)
 [![Go Version](https://img.shields.io/github/go-mod/go-version/shouni/go-ai-client)](https://golang.org/)
@@ -7,7 +7,7 @@
 
 ## 🎯 概要: Gemini APIのためのテンプレートベースAIクライアント
 
-Go Ai Client は、Go言語で Generative AI（特に Google **Gemini API**）を簡単に利用するためのクライアントライブラリ、および**テンプレートベースのプロンプト生成**ユーティリティを提供します。
+Go AI Client は、Go言語で Generative AI（特に Google **Gemini API**）を簡単に利用するためのクライアントライブラリ、および**テンプレートベースのプロンプト生成**ユーティリティを提供します。
 
 このパッケージを使うことで、開発者は複雑なAPIリクエストの構築や生のJSON/HTTP通信を意識することなく、GoらしいシンプルなインターフェースでAIモデルのパワーを活用できます。
 
