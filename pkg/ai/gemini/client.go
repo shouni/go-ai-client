@@ -17,9 +17,8 @@ import (
 const (
 	// デフォルトのリトライ回数
 	DefaultMaxRetries = 3
-	// API呼び出しのタイムアウトは context.Context で制御されます。
 	// デフォルトの温度 (0.0 から 1.0 の範囲で、通常 0.0 が決定論的、1.0 が創造的)
-	DefaultTemperature float32 = 0.7 // float32に戻す
+	DefaultTemperature float32 = 0.7
 )
 
 // GenerativeModel is the interface that defines the core operations this client provides.
