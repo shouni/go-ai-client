@@ -13,7 +13,8 @@ Go AI Client は、Go言語で Generative AI（特に Google **Gemini API**）�
 
 ### ✨ 特徴
 
-* **Gemini API クライアント:** Google Gemini APIとの基本的なやり取りを行うためのシンプルで使いやすいクライアントを提供します。**責務がAPI通信とリトライ処理に限定**され、プロンプトの内容に依存しません。
+* **Gemini API クライアント:** Google Gemini APIとの基本的なやり取りを行うためのシンプルで使いやすいクライアントを提供します。**責務がAPI通信とリトライ処理、およびモデルパラメータの設定に限定**され、プロンプトの内容に依存しません。
+* **モデルパラメータのサポート (New!):** クライアントの初期化時に**温度 (`Temperature`)** を設定できるようになりました。これにより、生成されるコンテンツのランダム性（創造性）を制御できます。
 * **リトライ戦略:** ネットワークエラーや一時的なAPIエラーに対応するため、自動リトライロジック（`go-web-exact/pkg/retry`を使用）を内蔵しています。
 * **柔軟なプロンプトモード:** 特定タスク向けの**テンプレートベースのプロンプト構築機能**（`pkg/prompt`）と、自由なテキストをそのまま送る**汎用モード**をサポートします。プロンプト構築のロジックはCLIツール側（`cmd`）に存在します。
 
@@ -41,7 +42,7 @@ export GEMINI_API_KEY="YOUR_API_KEY"
 
 ### 💡 使用方法
 
-このライブラリのコア機能は、CLIツール (`cmd/root.go`) を通じて提供されています。
+このライブラリのコア機能は、CLIツール (`cmd/root.go`) を通じて提供されています。（CLI側の対応は別途必要ですが、クライアント機能として記載します。）
 
 #### 1\. CLIツールとしての使用 (推奨)
 
@@ -67,6 +68,7 @@ cat input.txt | ./bin/ai-client prompt -d dialogue -m gemini-2.5-flash
 # -d, --mode (promptコマンド専用): 生成するスクリプトのモード (solo, dialogue)
 # -m, --model: 使用するGeminiモデル名
 # -t, --timeout: 全体のリクエストタイムアウト時間 (秒)
+# -T, --temperature (New!): モデルの応答温度 (0.0: 決定的, 1.0: 創造的)
 ```
 
 #### 2\. Goコード内でのクライアント使用
@@ -75,7 +77,7 @@ cat input.txt | ./bin/ai-client prompt -d dialogue -m gemini-2.5-flash
 
 **【テンプレートを使用する/しないにかかわらず共通】**
 
-クライアントには、テンプレート処理を経た**最終的なプロンプト文字列**を渡します。
+クライアントには、テンプレート処理を経た**最終的なプロンプト文字列**を渡します。また、**クライアント初期化時**に温度を設定できます。
 
 ```go
 package main
@@ -85,16 +87,27 @@ import (
     "fmt"
     "log"
     "time"
+    "math"
 
     "go-ai-client/pkg/ai/gemini"
-    "go-ai-client/pkg/prompt" // ★ テンプレートを使う場合はインポートが必要
+    "go-ai-client/pkg/prompt" 
 )
 
 func main() {
     ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
     defer cancel()
 
-    client, err := gemini.NewClientFromEnv(ctx)
+    // 新しい温度設定を定義
+    tempValue := float32(0.9) // 創造性を高めるために高めに設定
+    
+    // クライアント設定を定義
+    cfg := gemini.Config{
+        APIKey: os.Getenv("GEMINI_API_KEY"), // 環境変数から取得
+        // 温度を設定
+        Temperature: &tempValue, 
+    }
+
+    client, err := gemini.NewClient(ctx, cfg) // NewClientを使用
     if err != nil {
        log.Fatalf("クライアント初期化エラー: %v", err)
     }
@@ -102,11 +115,9 @@ func main() {
     // ----------------------------------------------------------------
     // 1. テンプレートを使用する場合 (例: solo モード)
     // ----------------------------------------------------------------
-    // BuildFullPrompt のシグネチャ変更に伴い、string型で定義
     rawInput := "Go言語でAPIクライアントを作成する利点について教えてください。" 
     mode := "solo" 
     
-    // ★ 呼び出し元で finalPrompt を構築 (stringを渡す)
     finalPrompt, err := prompt.BuildFullPrompt(rawInput, mode) 
     if err != nil {
         log.Fatalf("プロンプト構築エラー: %v", err)
@@ -121,6 +132,7 @@ func main() {
     }
 
     fmt.Println("--- 応答 ---")
+    fmt.Printf("設定温度: %.1f\n", *cfg.Temperature)
     fmt.Println(response.Text)
     
     // ----------------------------------------------------------------
@@ -137,7 +149,7 @@ func main() {
 | ディレクトリ/ファイル | 概要 |
 | :--- | :--- |
 | `pkg/ai/gemini` | Google Gemini API専用のクライアント実装。 |
-| `pkg/ai/gemini/client.go` | **Gemini APIクライアント**のコアロジック。**API通信、リトライ、レスポンス処理のみ**を担う。 |
+| `pkg/ai/gemini/client.go` | **Gemini APIクライアント**のコアロジック。**API通信、リトライ、レスポンス処理、および温度設定**を担う。 |
 | `pkg/prompt` | プロンプトのテンプレートおよび構築ロジック。 |
 | `pkg/prompt/prompt.go` | **テンプレートベースのプロンプト定義**と、入力内容を埋め込む `BuildFullPrompt` 関数を提供。テンプレートは事前解析され、キャッシュされる。 |
 
