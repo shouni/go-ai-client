@@ -17,7 +17,8 @@ import (
 const (
 	// デフォルトのリトライ回数
 	DefaultMaxRetries = 3
-	// API呼び出しのタイムアウトは context.Context で制御されます。
+	// デフォルトの温度 (0.0 から 1.0 の範囲で、通常 0.0 が決定論的、1.0 が創造的)
+	DefaultTemperature float32 = 0.7
 )
 
 // GenerativeModel is the interface that defines the core operations this client provides.
@@ -29,12 +30,14 @@ type GenerativeModel interface {
 type Client struct {
 	client      *genai.Client
 	retryConfig retry.Config
+	temperature float32 // 修正: float32に戻す
 }
 
 // Config defines the configuration for initializing the Client.
 type Config struct {
-	APIKey     string
-	MaxRetries uint64
+	APIKey      string
+	MaxRetries  uint64
+	Temperature *float32 // 修正: *float32に戻す
 }
 
 // Response holds the Gemini API result.
@@ -68,9 +71,20 @@ func NewClient(ctx context.Context, cfg Config) (*Client, error) {
 		retryCfg.MaxRetries = DefaultMaxRetries
 	}
 
+	// 4. 温度設定の初期化と検証
+	temp := DefaultTemperature
+	if cfg.Temperature != nil {
+		// float32として検証
+		if *cfg.Temperature < 0.0 || *cfg.Temperature > 1.0 {
+			return nil, fmt.Errorf("temperature must be between 0.0 and 1.0, got %f", *cfg.Temperature)
+		}
+		temp = *cfg.Temperature
+	}
+
 	return &Client{
 		client:      client,
 		retryConfig: retryCfg,
+		temperature: temp, // float32として格納
 	}, nil
 }
 
@@ -99,13 +113,21 @@ func (c *Client) GenerateContent(ctx context.Context, finalPrompt string, modelN
 	}
 
 	var responseText string
-	// 文字列から Content 構造体を構築 (クライアントの責務はここまで)
+	// 文字列から Content 構造体を構築
 	contents := promptToContents(finalPrompt)
+
+	// Temperatureには*float32のポインタが必要なため、Clientのfloat32値をポインタに変換して使用する (修正)
+	tempPtr := &c.temperature
+
+	// API呼び出しパラメータの構築: genai.GenerateContentConfigを使用
+	config := &genai.GenerateContentConfig{
+		Temperature: tempPtr, // *float32型を渡す
+	}
 
 	// 1. API呼び出しとレスポンス処理を行う操作関数 (retry.Operation型に準拠)
 	op := func() error {
-		// Context には cmd/root.go で設定されたタイムアウトが適用される
-		resp, err := c.client.Models.GenerateContent(ctx, modelName, contents, nil)
+		// GenerateContentに設定（config）を渡す
+		resp, err := c.client.Models.GenerateContent(ctx, modelName, contents, config)
 
 		if err != nil {
 			return err // API呼び出し自体のエラー（ネットワークやgRPCエラー）
