@@ -129,7 +129,7 @@ func main() {
 ```
 
 | `gemini.Config` フィールド | 役割 | CLIフラグ | デフォルト値 |
-| :--- | :--- | :--- |:-------|
+| :--- | :--- | :--- |:---|
 | **`Temperature`** | モデルの応答温度 (0.0: 決定的 \~ 1.0: 創造的)。 | `-T` | `0.7`  |
 | **`MaxRetries`** | APIコールが失敗したときの最大リトライ回数。 | `--max-retries` | `3`    |
 | **`InitialDelay`** | 指数バックオフの初期間隔 (`time.Duration`)。 | `--initial-delay` | `60s`  |

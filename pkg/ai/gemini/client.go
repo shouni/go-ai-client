@@ -15,7 +15,7 @@ import (
 )
 
 const (
-	// DefaultTemperature デフォルトの温度 (0.0 から 1.0 の範囲で、通常 0.0 が決定論的、1.0 が創造的)
+	// DefaultTemperature は、モデルの応答温度のデフォルト値です。(0.0 から 1.0 の範囲で、通常 0.0 が決定論的、1.0 が創造的)
 	DefaultTemperature float32 = 0.7
 	// DefaultMaxRetries デフォルトのリトライ回数
 	DefaultMaxRetries = 3
