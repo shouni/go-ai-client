@@ -15,10 +15,14 @@ import (
 )
 
 const (
-	// DefaultMaxRetries デフォルトのリトライ回数
-	DefaultMaxRetries = 3
 	// DefaultTemperature デフォルトの温度 (0.0 から 1.0 の範囲で、通常 0.0 が決定論的、1.0 が創造的)
 	DefaultTemperature float32 = 0.7
+	// DefaultMaxRetries デフォルトのリトライ回数
+	DefaultMaxRetries = 3
+	// DefaultInitialDelay デフォルトの指数バックオフの初期間隔
+	DefaultInitialDelay = 60 * time.Second
+	// DefaultMaxDelay デフォルトの指数バックオフの最大間隔
+	DefaultMaxDelay = 300 * time.Second
 )
 
 // GenerativeModel is the interface that defines the core operations this client provides.
@@ -88,11 +92,15 @@ func NewClient(ctx context.Context, cfg Config) (*Client, error) {
 	// InitialDelay (InitialInterval) の反映
 	if cfg.InitialDelay > 0 {
 		retryCfg.InitialInterval = cfg.InitialDelay
+	} else {
+		retryCfg.InitialInterval = DefaultInitialDelay
 	}
 
 	// MaxDelay (MaxInterval) の反映
 	if cfg.MaxDelay > 0 {
 		retryCfg.MaxInterval = cfg.MaxDelay
+	} else {
+		retryCfg.MaxInterval = DefaultMaxDelay
 	}
 
 	return &Client{
