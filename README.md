@@ -14,8 +14,8 @@ Go AI Client は、Go言語で Generative AI（特に Google **Gemini API**）�
 ### ✨ 特徴
 
 * **Gemini API クライアント:** Google Gemini APIとの基本的なやり取りを行うためのシンプルで使いやすいクライアントを提供します。**責務がAPI通信とリトライ処理、およびモデルパラメータの設定に限定**され、プロンプトの内容に依存しません。
-* **モデルパラメータのサポート (New!):** クライアントの初期化時に**温度 (`Temperature`)** を設定できるようになりました。これにより、生成されるコンテンツのランダム性（創造性）を制御できます。
-* **リトライ戦略:** ネットワークエラーや一時的なAPIエラーに対応するため、自動リトライロジック（`go-web-exact/pkg/retry`を使用）を内蔵しています。
+* **モデルパラメータのサポート:** クライアントの初期化時に**温度 (`Temperature`)** を設定できるようになりました。これにより、生成されるコンテンツのランダム性（創造性）を制御できます。
+* **堅牢なリトライ戦略:** ネットワークエラーや一時的なAPIエラーに対応するため、**リトライ回数、初期間隔、最大間隔**を細かく設定できる自動リトライロジック（`go-web-exact/pkg/retry`を使用）を内蔵しています。
 * **柔軟なプロンプトモード:** 特定タスク向けの**テンプレートベースのプロンプト構築機能**（`pkg/prompt`）と、自由なテキストをそのまま送る**汎用モード**をサポートします。プロンプト構築のロジックはCLIツール側（`cmd`）に存在します。
 
 -----
@@ -52,10 +52,13 @@ CLIツールとしてビルドし、コマンドラインで直接使用しま�
 # ビルド
 go build -o bin/ai-client
 
-# 実行例 1: テンプレートを使用 (prompt コマンド)
-# soloモードでナレーションスクリプトを生成
-./bin/ai-client prompt "地球温暖化の主要な原因とその対策について、簡潔に説明してください。" -d solo 
-
+# 実行例: テンプレートを使用し、温度とリトライ回数を指定
+./bin/ai-client prompt "地球温暖化の主要な原因とその対策について、簡潔に説明してください。" \
+    -d solo \
+    -T 0.5 \
+    --max-retries 2 \
+    --initial-delay 60s
+    
 # 実行例 2: テンプレートを使用 (dialogue コマンド)
 # dialogueモードで対話スクリプトを生成（モデル名も指定）
 cat input.txt | ./bin/ai-client prompt -d dialogue -m gemini-2.5-flash
@@ -71,76 +74,66 @@ cat input.txt | ./bin/ai-client prompt -d dialogue -m gemini-2.5-flash
 # -T, --temperature (New!): モデルの応答温度 (0.0: 決定的, 1.0: 創造的)
 ```
 
-#### 2\. Goコード内でのクライアント使用
+#### 2\. Goコード内でのクライアント使用と詳細設定
 
-クライアントは**最終的なプロンプト文字列**を受け取ります。テンプレートを使用する場合は、**呼び出し元**で `prompt.BuildFullPrompt` を使ってプロンプトを構築する必要があります。
-
-**【テンプレートを使用する/しないにかかわらず共通】**
-
-クライアントには、テンプレート処理を経た**最終的なプロンプト文字列**を渡します。また、**クライアント初期化時**に温度を設定できます。
+クライアントには**最終的なプロンプト文字列**を渡し、**クライアント初期化時**にモデルパラメータとリトライパラメータを設定します。
 
 ```go
 package main
 
 import (
-    "context"
-    "fmt"
-    "log"
-    "time"
-    "math"
+	"context"
+	"fmt"
+	"log"
+	"os"
+	"time"
 
-    "go-ai-client/pkg/ai/gemini"
-    "go-ai-client/pkg/prompt" 
+	"go-ai-client/pkg/ai/gemini"
+	"go-ai-client/pkg/prompt" 
 )
 
 func main() {
-    ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-    defer cancel()
+	// APIリクエスト全体のタイムアウトをコンテキストで制御
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	defer cancel()
 
-    // 新しい温度設定を定義
-    tempValue := float32(0.9) // 創造性を高めるために高めに設定
+	tempValue := float32(0.9) // 創造性を高めるために高めに設定
     
-    // クライアント設定を定義
-    cfg := gemini.Config{
-        APIKey: os.Getenv("GEMINI_API_KEY"), // 環境変数から取得
-        // 温度を設定
-        Temperature: &tempValue, 
-    }
+	// クライアント設定を定義
+	cfg := gemini.Config{
+		APIKey: os.Getenv("GEMINI_API_KEY"),
+		Temperature: &tempValue,
+		MaxRetries: 2,                 // 最大リトライ回数
+		InitialDelay: 60 * time.Second,  // 最初のディレイ (60秒)
+		MaxDelay: 300 * time.Second,      // ディレイの上限
+	}
 
-    client, err := gemini.NewClient(ctx, cfg) // NewClientを使用
-    if err != nil {
-       log.Fatalf("クライアント初期化エラー: %v", err)
-    }
-    
-    // ----------------------------------------------------------------
-    // 1. テンプレートを使用する場合 (例: solo モード)
-    // ----------------------------------------------------------------
-    rawInput := "Go言語でAPIクライアントを作成する利点について教えてください。" 
-    mode := "solo" 
-    
-    finalPrompt, err := prompt.BuildFullPrompt(rawInput, mode) 
-    if err != nil {
-        log.Fatalf("プロンプト構築エラー: %v", err)
-    }
-    
-    model := "gemini-2.5-flash"
-    
-    // クライアントは最終プロンプト文字列のみを受け取る
-    response, err := client.GenerateContent(ctx, finalPrompt, model)
-    if err != nil {
-       log.Fatalf("コンテンツ生成エラー: %v", err)
-    }
+	client, err := gemini.NewClient(ctx, cfg) // NewClientを使用
+	if err != nil {
+		log.Fatalf("クライアント初期化エラー: %v", err)
+	}
+	
+	// ... (プロンプトの構築ロジック)
+	rawInput := "Go言語でAPIクライアントを作成する利点について教えてください。" 
+	finalPrompt, _ := prompt.BuildFullPrompt(rawInput, "solo") 
+	
+	response, err := client.GenerateContent(ctx, finalPrompt, "gemini-2.5-flash")
+	if err != nil {
+		log.Fatalf("コンテンツ生成エラー: %v", err)
+	}
 
-    fmt.Println("--- 応答 ---")
-    fmt.Printf("設定温度: %.1f\n", *cfg.Temperature)
-    fmt.Println(response.Text)
-    
-    // ----------------------------------------------------------------
-    // 2. テンプレートを使用しない場合
-    // ----------------------------------------------------------------
-    // client.GenerateContent(ctx, "自由なテキストプロンプト", "モデル名") で直接実行可能
+	fmt.Println("--- 応答 ---")
+	fmt.Printf("設定温度: %.1f, リトライ回数: %d\n", *cfg.Temperature, cfg.MaxRetries)
+	fmt.Println(response.Text)
 }
 ```
+
+| `gemini.Config` フィールド | 役割 | CLIフラグ | デフォルト値 |
+| :--- | :--- | :--- |:---|
+| **`Temperature`** | モデルの応答温度 (0.0: 決定的 \~ 1.0: 創造的)。 | `-T` | `0.7`  |
+| **`MaxRetries`** | APIコールが失敗したときの最大リトライ回数。 | `--max-retries` | `3`    |
+| **`InitialDelay`** | 指数バックオフの初期間隔 (`time.Duration`)。 | `--initial-delay` | `60s`  |
+| **`MaxDelay`** | 指数バックオフの最大間隔 (`time.Duration`)。 | `--max-delay` | `300s` |
 
 -----
 
@@ -149,7 +142,7 @@ func main() {
 | ディレクトリ/ファイル | 概要 |
 | :--- | :--- |
 | `pkg/ai/gemini` | Google Gemini API専用のクライアント実装。 |
-| `pkg/ai/gemini/client.go` | **Gemini APIクライアント**のコアロジック。**API通信、リトライ、レスポンス処理、および温度設定**を担う。 |
+| `pkg/ai/gemini/client.go` | **Gemini APIクライアント**のコアロジック。**API通信、リトライ、レスポンス処理、温度、およびリトライディレイ設定**を担う。 |
 | `pkg/prompt` | プロンプトのテンプレートおよび構築ロジック。 |
 | `pkg/prompt/prompt.go` | **テンプレートベースのプロンプト定義**と、入力内容を埋め込む `BuildFullPrompt` 関数を提供。テンプレートは事前解析され、キャッシュされる。 |
 

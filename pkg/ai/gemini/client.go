@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"time"
 
 	"google.golang.org/genai"
 	"google.golang.org/grpc/codes"
@@ -13,12 +14,15 @@ import (
 	"github.com/shouni/go-web-exact/pkg/retry"
 )
 
-// Default settings for API calls
 const (
-	// デフォルトのリトライ回数
-	DefaultMaxRetries = 3
-	// デフォルトの温度 (0.0 から 1.0 の範囲で、通常 0.0 が決定論的、1.0 が創造的)
+	// DefaultTemperature は、モデルの応答温度のデフォルト値です。(0.0 から 1.0 の範囲で、通常 0.0 が決定論的、1.0 が創造的)
 	DefaultTemperature float32 = 0.7
+	// DefaultMaxRetries デフォルトのリトライ回数
+	DefaultMaxRetries = 3
+	// DefaultInitialDelay デフォルトの指数バックオフの初期間隔
+	DefaultInitialDelay = 60 * time.Second
+	// DefaultMaxDelay デフォルトの指数バックオフの最大間隔
+	DefaultMaxDelay = 300 * time.Second
 )
 
 // GenerativeModel is the interface that defines the core operations this client provides.
@@ -29,15 +33,17 @@ type GenerativeModel interface {
 // Client manages communication with the Gemini API. It implements the GenerativeModel interface.
 type Client struct {
 	client      *genai.Client
+	temperature float32
 	retryConfig retry.Config
-	temperature float32 // 修正: float32に戻す
 }
 
 // Config defines the configuration for initializing the Client.
 type Config struct {
-	APIKey      string
-	MaxRetries  uint64
-	Temperature *float32 // 修正: *float32に戻す
+	APIKey       string
+	Temperature  *float32
+	MaxRetries   uint64
+	InitialDelay time.Duration // retry.Config.InitialInterval に対応
+	MaxDelay     time.Duration // retry.Config.MaxInterval に対応
 }
 
 // Response holds the Gemini API result.
@@ -53,7 +59,7 @@ func NewClient(ctx context.Context, cfg Config) (*Client, error) {
 		return nil, fmt.Errorf("APIKey is required for Gemini client initialization")
 	}
 
-	// 2. クライアントの作成
+	// 2. 基底クライアントの作成
 	clientConfig := &genai.ClientConfig{
 		APIKey: cfg.APIKey,
 	}
@@ -63,15 +69,7 @@ func NewClient(ctx context.Context, cfg Config) (*Client, error) {
 		return nil, fmt.Errorf("failed to create Gemini client: %w", err)
 	}
 
-	// 3. リトライ設定の初期化
-	retryCfg := retry.DefaultConfig()
-	if cfg.MaxRetries > 0 {
-		retryCfg.MaxRetries = cfg.MaxRetries
-	} else {
-		retryCfg.MaxRetries = DefaultMaxRetries
-	}
-
-	// 4. 温度設定の初期化と検証
+	// 3. 温度設定の初期化と検証
 	temp := DefaultTemperature
 	if cfg.Temperature != nil {
 		// float32として検証
@@ -81,10 +79,34 @@ func NewClient(ctx context.Context, cfg Config) (*Client, error) {
 		temp = *cfg.Temperature
 	}
 
+	// 4. リトライ設定の初期化と反映
+	retryCfg := retry.DefaultConfig()
+
+	// MaxRetries の反映
+	if cfg.MaxRetries > 0 {
+		retryCfg.MaxRetries = cfg.MaxRetries
+	} else {
+		retryCfg.MaxRetries = DefaultMaxRetries
+	}
+
+	// InitialDelay (InitialInterval) の反映
+	if cfg.InitialDelay > 0 {
+		retryCfg.InitialInterval = cfg.InitialDelay
+	} else {
+		retryCfg.InitialInterval = DefaultInitialDelay
+	}
+
+	// MaxDelay (MaxInterval) の反映
+	if cfg.MaxDelay > 0 {
+		retryCfg.MaxInterval = cfg.MaxDelay
+	} else {
+		retryCfg.MaxInterval = DefaultMaxDelay
+	}
+
 	return &Client{
 		client:      client,
+		temperature: temp,
 		retryConfig: retryCfg,
-		temperature: temp, // float32として格納
 	}, nil
 }
 
@@ -116,7 +138,7 @@ func (c *Client) GenerateContent(ctx context.Context, finalPrompt string, modelN
 	// 文字列から Content 構造体を構築
 	contents := promptToContents(finalPrompt)
 
-	// Temperatureには*float32のポインタが必要なため、Clientのfloat32値をポインタに変換して使用する (修正)
+	// Temperatureには*float32のポインタが必要なため、Clientのfloat32値をポインタに変換
 	tempPtr := &c.temperature
 
 	// API呼び出しパラメータの構築: genai.GenerateContentConfigを使用
@@ -124,13 +146,13 @@ func (c *Client) GenerateContent(ctx context.Context, finalPrompt string, modelN
 		Temperature: tempPtr, // *float32型を渡す
 	}
 
-	// 1. API呼び出しとレスポンス処理を行う操作関数 (retry.Operation型に準拠)
+	// 1. API呼び出しとレスポンス処理を行う操作関数
 	op := func() error {
 		// GenerateContentに設定（config）を渡す
 		resp, err := c.client.Models.GenerateContent(ctx, modelName, contents, config)
 
 		if err != nil {
-			return err // API呼び出し自体のエラー（ネットワークやgRPCエラー）
+			return err // API呼び出し自体のエラー
 		}
 
 		// レスポンスからテキストを抽出（ブロックエラーもここで処理）
@@ -143,11 +165,11 @@ func (c *Client) GenerateContent(ctx context.Context, finalPrompt string, modelN
 		return nil
 	}
 
-	// 2. shouldRetryFn: API固有の一時的エラー判定ロジック (retry.ShouldRetryFunc型に準拠)
+	// 2. shouldRetryFn: API固有の一時的エラー判定ロジック
 	shouldRetryFn := func(err error) bool {
 		var apiErr *APIResponseError
 		if errors.As(err, &apiErr) {
-			return false
+			return false // APIResponseError (ブロックなど) は永続エラー
 		}
 		// API呼び出しエラーの場合のみ、Gemini固有の判定ロジックを適用
 		return shouldRetry(err)
