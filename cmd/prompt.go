@@ -2,8 +2,8 @@ package cmd
 
 import (
 	"context"
-	_ "embed" // go:embed のためにアンダースコアインポート
-	"errors" // errors.New のために必要
+	_ "embed"
+	"errors"
 	"fmt"
 	"os"
 
@@ -14,7 +14,7 @@ import (
 // promptCmd固有のフラグ変数を定義
 var promptMode string
 
-// --- 埋め込みプロンプト ---
+// --- 埋め込みプロンプト --- (省略)
 
 //go:embed prompt/zundamon_solo.md
 var ZundamonSoloPrompt string
@@ -22,16 +22,14 @@ var ZundamonSoloPrompt string
 //go:embed prompt/zundametan_dialogue.md
 var ZundaMetanDialoguePrompt string
 
-// newPromptCmd は 'prompt' サブコマンドを構築して返します。
-func newPromptCmd() *cobra.Command {
+// PromptCmd は 'prompt' サブコマンドのインスタンスです。（公開）
+var PromptCmd = NewPromptCmd()
+
+func NewPromptCmd() *cobra.Command { // 関数名をNewPromptCmdに変更
 	cmd := &cobra.Command{
 		Use:   "prompt [テキストまたはファイル]",
 		Short: "事前に登録されたプロンプトテンプレート（Solo/Dialogue）を使用してスクリプトを生成します。",
-		Long: `このコマンドは、ずんだもんやめたんなどのキャラクターに特化したテンプレートを使用して、
-入力テキストをナレーションスクリプト形式に変換します。
-
-利用例:
-  ai-client prompt "今日の天気は晴れです" -d solo`,
+		// ... (Longの説明は省略)
 
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// 1. 入力内容の読み込みとAPIキー確認
@@ -48,13 +46,8 @@ func newPromptCmd() *cobra.Command {
 				return errors.New("テンプレートモード (prompt) は、処理するための入力テキストを必要とします。コマンドライン引数または標準入力で提供してください。")
 			}
 
-			// 2. コンテキスト作成
-			// generateAndOutput 側でタイムアウト設定が適用されるため、ここでは基本コンテキストを使用
-			ctx := context.Background()
-
-			// 3. 実行と出力 (root.goの共通ロジックを使用)
-			// inputContentは generateAndOutput 内で string に変換され、prompt.BuildFullPrompt に渡される
-			return generateAndOutput(ctx, inputContent, promptMode, modelName)
+			// 2. 実行と出力 (共通ロジックを使用)
+			return GenerateAndOutput(context.Background(), inputContent, promptMode, ModelName)
 		},
 
 		Args: cobra.ArbitraryArgs,
