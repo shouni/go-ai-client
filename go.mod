@@ -3,6 +3,7 @@ module github.com/shouni/go-ai-client
 go 1.24.0
 
 require (
+	github.com/shouni/go-cli-base v1.0.1
 	github.com/shouni/go-utils v1.0.2
 	github.com/spf13/cobra v1.10.1
 	google.golang.org/genai v1.33.0
