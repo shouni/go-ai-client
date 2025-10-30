@@ -7,11 +7,10 @@ import (
 	"os"
 	"time"
 
+	"github.com/shouni/go-utils/retry"
 	"google.golang.org/genai"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-
-	"github.com/shouni/go-web-exact/pkg/retry"
 )
 
 const (
