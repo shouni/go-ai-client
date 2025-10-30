@@ -7,6 +7,9 @@ import (
 	"github.com/shouni/go-cli-base"
 )
 
+// main は go-cli-base ライブラリを使用してCLIアプリケーションを初期化し、実行します。
+// これにより、共通のCLI構造（ルートコマンド、フラグ、サブコマンド、エラーハンドリング）が抽象化され、
+// アプリケーション固有のロジックに集中できるようになります。
 func main() {
 	log.SetFlags(0)
 
