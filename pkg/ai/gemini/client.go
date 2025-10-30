@@ -19,9 +19,9 @@ const (
 	// DefaultMaxRetries デフォルトのリトライ回数
 	DefaultMaxRetries = 3
 	// DefaultInitialDelay デフォルトの指数バックオフの初期間隔
-	DefaultInitialDelay = 60 * time.Second
+	DefaultInitialDelay = 30 * time.Second
 	// DefaultMaxDelay デフォルトの指数バックオフの最大間隔
-	DefaultMaxDelay = 300 * time.Second
+	DefaultMaxDelay = 120 * time.Second
 )
 
 // GenerativeModel is the interface that defines the core operations this client provides.
