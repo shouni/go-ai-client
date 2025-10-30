@@ -1,4 +1,4 @@
-module github.com/shouni/go-ai-client
+module github.com/shouni/go-ai-client/v2
 
 go 1.24.0
 
