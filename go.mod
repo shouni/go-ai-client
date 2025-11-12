@@ -3,7 +3,6 @@ module github.com/shouni/go-ai-client/v2
 go 1.25
 
 require (
-	github.com/shouni/go-ai-client v1.0.7
 	github.com/shouni/go-cli-base v1.0.5
 	github.com/shouni/go-utils v1.0.8
 	github.com/spf13/cobra v1.10.1

@@ -62,8 +62,6 @@ github.com/pmezard/go-difflib v1.0.0 h1:4DBwDE0NGyQoBHbLQYPwSUPoCMWR5BEzIk/f1lZb
 github.com/pmezard/go-difflib v1.0.0/go.mod h1:iKH77koFhYxTK1pcRnkKkqfTogsbg7gZNVY4sRDYZ/4=
 github.com/prometheus/client_model v0.0.0-20190812154241-14fe0d1b01d4/go.mod h1:xMI15A0UPsDsEKsMN9yxemIoYk6Tm2C1GtYGdfGttqA=
 github.com/russross/blackfriday/v2 v2.1.0/go.mod h1:+Rmxgy9KzJVeS9/2gXHxylqXiyQDYRxCVz55jmeOWTM=
-github.com/shouni/go-ai-client v1.0.7 h1:C91PzFfWxHzwsZHPWnaEs+AbFFR4lFkzRzBXk8jhqXc=
-github.com/shouni/go-ai-client v1.0.7/go.mod h1:TAQXiekTkNMkIwtXv5SMMjaAsV7gTn/BihcLoVfO9ec=
 github.com/shouni/go-cli-base v1.0.5 h1:Wn09yji6/DIesFwo81/xlzWaJMqZVG07gXoRxMIre4c=
 github.com/shouni/go-cli-base v1.0.5/go.mod h1:8E4ahg7/LC3cG5zSBR4u/s+ugqrXxEsqXVWGbFlE1P8=
 github.com/shouni/go-utils v1.0.8 h1:zUHDEIHvDkQTLC+VxnnkQHnRztbubTbXFwVxrPywWgU=

@@ -24,7 +24,7 @@ func NewGenericCmd() *cobra.Command {
 				return err
 			}
 
-			return GenerateAndOutput(cmd.Context(), inputContent, "generic", ModelName)
+			return GenerateAndOutput(cmd.Context(), inputContent, "generic")
 		},
 	}
 	return cmd

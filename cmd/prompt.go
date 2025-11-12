@@ -35,15 +35,13 @@ func NewPromptCmd() *cobra.Command {
 				return errors.New("致命的エラー: テンプレートモード (prompt) は、処理するための入力テキストを必要とします。コマンドライン引数または標準入力で提供してください。")
 			}
 
-			// モードフラグの必須チェック (MarkFlagRequiredで定義済みだが、念のため)
+			// モードフラグの必須チェック
 			if promptMode == "" {
 				return errors.New("致命的エラー: 'mode' フラグ (-d) が必須です。")
 			}
 
 			// 2. 実行と出力 (共通ロジックを使用)
-			// Contextは cmd.Context() を使用
-			// GenerateAndOutput と ModelName は cmd_core.go で定義された共通要素
-			return GenerateAndOutput(cmd.Context(), inputContent, promptMode, ModelName)
+			return GenerateAndOutput(cmd.Context(), inputContent, promptMode)
 		},
 
 		Args: cobra.ArbitraryArgs,

@@ -1,28 +1,21 @@
 package cmd
 
 import (
-	"context"
 	"fmt"
 	"io"
-	"log/slog"
-	"os"
 	"strings"
-	"time"
 
-	"github.com/shouni/go-ai-client/v2/pkg/ai/gemini"
-	"github.com/shouni/go-ai-client/v2/pkg/promptbuilder"
-	"github.com/shouni/go-ai-client/v2/prompts"
 	clibase "github.com/shouni/go-cli-base"
 	"github.com/spf13/cobra"
 )
 
-// 公開（大文字）に変更
+// 公開（大文字）に変更 - Persistent Flags
 var (
 	ModelName string
 	Timeout   int
 )
 
-const separator = "=============================================="
+// --- CLI定義 ---
 
 // rootCmd は、このアプリケーションのメインとなるコマンドです。
 var rootCmd = &cobra.Command{
@@ -32,39 +25,15 @@ var rootCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return cmd.Help()
 	},
+	// PersistentPreRunE で初期設定とDIを実行する
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
-		return initAppPreRunE(cmd, args)
+		// 1. 基本設定 (ログ、APIキーチェック)
+		if err := initAppPreRunE(cmd, args); err != nil {
+			return err
+		}
+		// 2. 依存関係の構築とDI
+		return SetupRunner(cmd.Context())
 	},
-}
-
-// checkAPIKey は、APIキー環境変数が設定されているかを確認します。
-func checkAPIKey() error {
-	if os.Getenv("GEMINI_API_KEY") == "" && os.Getenv("GOOGLE_API_KEY") == "" {
-		return fmt.Errorf("致命的エラー: GEMINI_API_KEY または GOOGLE_API_KEY 環境変数が設定されていません。")
-	}
-	return nil
-}
-
-func initAppPreRunE(cmd *cobra.Command, args []string) error {
-	// ログレベル設定
-	logLevel := slog.LevelInfo
-	if clibase.Flags.Verbose {
-		logLevel = slog.LevelDebug
-	}
-	handler := slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
-		Level: logLevel,
-	})
-	slog.SetDefault(slog.New(handler))
-
-	// APIキーチェック
-	err := checkAPIKey()
-	if err != nil {
-		slog.Error("🚨 APIKeyの取得に失敗しました", "error", err)
-		return fmt.Errorf("APIKeyの取得に失敗しました: %w", err)
-	}
-
-	slog.Info("アプリケーション設定初期化完了")
-	return nil
 }
 
 func addAppPersistentFlags(rootCmd *cobra.Command) {
@@ -77,8 +46,8 @@ func Execute() {
 		"go-ai-client",
 		addAppPersistentFlags,
 		initAppPreRunE,
-		genericCmd, // NewGenericCmd() から取得
-		PromptCmd,  // NewPromptCmd() から取得
+		genericCmd, // genericCmd, PromptCmd は外部で定義されていると想定
+		PromptCmd,
 	)
 }
 
@@ -90,7 +59,7 @@ func init() {
 	rootCmd.AddCommand(PromptCmd)
 }
 
-// --- 共通ユーティリティ関数（すべてのサブコマンドで使用） ---
+// --- 共通ユーティリティ関数（Rootに近いためここに配置） ---
 
 // readInput は、コマンドライン引数または標準入力からテキストを読み込みます。
 func readInput(cmd *cobra.Command, args []string) ([]byte, error) {
@@ -105,88 +74,4 @@ func readInput(cmd *cobra.Command, args []string) ([]byte, error) {
 		return nil, fmt.Errorf("致命的エラー: 処理するテキストがコマンドライン引数または標準入力から提供されていません。")
 	}
 	return input, nil
-}
-
-// createGeminiClient は、タイムアウト設定に基づいて Gemini クライアントを初期化します。
-// 責務を GenerateAndOutput から分離。
-func createGeminiClient(ctx context.Context) (gemini.GenerativeModel, context.Context, context.CancelFunc, error) {
-	clientCtx, cancel := context.WithTimeout(ctx, time.Duration(Timeout)*time.Second)
-
-	client, err := gemini.NewClientFromEnv(clientCtx)
-	if err != nil {
-		cancel()
-		return nil, nil, nil, fmt.Errorf("Geminiクライアントの初期化に失敗しました: %w", err)
-	}
-	return client, clientCtx, cancel, nil
-}
-
-// GenerateAndOutput は、Gemini APIを呼び出し、結果を標準出力に出力する共通ロジックです。（公開）
-func GenerateAndOutput(ctx context.Context, inputContent []byte, subcommandMode, modelName string) error {
-	client, clientCtx, cancel, err := createGeminiClient(ctx)
-	if err != nil {
-		return err
-	}
-	defer cancel() // タイムアウト処理のためにキャンセルを遅延実行
-
-	var finalPrompt string
-	modeDisplay := subcommandMode
-	inputText := string(inputContent)
-
-	if subcommandMode == "generic" {
-		finalPrompt = inputText
-		modeDisplay = "テンプレートなし (generic)"
-	} else {
-		finalPrompt, err = BuildFullPrompt(inputText, subcommandMode)
-		if err != nil {
-			return fmt.Errorf("failed to build full prompt (mode: %s): %w", subcommandMode, err)
-		}
-	}
-
-	slog.Info("応答生成リクエスト送信", "model", modelName, "mode", modeDisplay, "timeout", Timeout)
-	fmt.Printf("モデル %s で応答を生成中 (モード: %s, Timeout: %d秒)...\n", modelName, modeDisplay, Timeout)
-
-	// API呼び出し
-	resp, err := client.GenerateContent(clientCtx, finalPrompt, modelName)
-
-	if err != nil {
-		return fmt.Errorf("API処理中にエラーが発生しました: %w", err)
-	}
-
-	// 結果出力
-	fmt.Println("\n" + separator)
-	fmt.Printf("|| 応答 (モデル: %s, モード: %s) ||\n", modelName, modeDisplay)
-	fmt.Println(separator)
-	fmt.Println(resp.Text)
-	fmt.Println(separator)
-
-	return nil
-}
-
-// BuildFullPrompt は、指定されたモードと入力コンテンツに基づいて
-// 最終的なプロンプト文字列を構築します。
-// この関数は GetTemplate と PromptBuilder のロジックを統合します。
-func BuildFullPrompt(inputText string, mode string) (string, error) {
-	// 1. テンプレートの取得 (pkg/prompt 内の GetTemplate を使用)
-	templateName, templateContent, err := prompts.GetTemplate(mode)
-	if err != nil {
-		return "", err
-	}
-
-	// 2. PromptBuilder の初期化 (pkg/promptbuilder 内の NewPromptBuilder を使用)
-	builder, err := promptbuilder.NewPromptBuilder(templateName, templateContent)
-	if err != nil {
-		return "", err
-	}
-
-	// 3. データの埋め込みとプロンプトの構築
-	data := promptbuilder.TemplateData{
-		Content: inputText,
-	}
-
-	finalPrompt, err := builder.Build(data)
-	if err != nil {
-		return "", fmt.Errorf("プロンプトの実行と構築に失敗しました: %w", err)
-	}
-
-	return finalPrompt, nil
 }
