@@ -1,7 +1,7 @@
 package main
 
 import (
-	"github.com/shouni/go-ai-client/cmd" // CLIのエントリポイント
+	"github.com/shouni/go-ai-client/v2/cmd" // CLIのエントリポイント
 )
 
 func main() {

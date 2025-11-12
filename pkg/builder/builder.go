@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/shouni/go-ai-client/pkg/ai/gemini"
-	"github.com/shouni/go-ai-client/pkg/promptbuilder"
+	"github.com/shouni/go-ai-client/v2/pkg/ai/gemini"
+	"github.com/shouni/go-ai-client/v2/pkg/promptbuilder"
 )
 
 // GeminiServiceDependencies は、Geminiクライアントとプロンプトビルダを保持する構造体です。

@@ -1,10 +1,16 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
+	"strings"
+	"time"
 
+	"github.com/shouni/go-ai-client/v2/pkg/ai/gemini"
+	"github.com/shouni/go-ai-client/v2/pkg/prompts"
 	clibase "github.com/shouni/go-cli-base"
 	"github.com/spf13/cobra"
 )
@@ -15,20 +21,19 @@ var (
 	Timeout   int
 )
 
-// clientKey は context.Context に httpkit.Client を格納・取得するための非公開キー
-// (以前のコードにあった httpkit の依存は、今回のコードにはないため省略しますが、
-// 以前の記憶に基づき、ここでは context.Context の設定のみを残します。)
+const separator = "=============================================="
+
+// clientKey は context.Context に格納するための非公開キー
 type clientKey struct{}
 
 // rootCmd は、このアプリケーションのメインとなるコマンドです。
 var rootCmd = &cobra.Command{
-	Use:   "go-ai-client", // プロジェクト名に合わせて修正
+	Use:   "go-ai-client",
 	Short: "Gemini APIのためのテンプレートベースAIクライアント",
 	Long:  `Go言語で Generative AI（特に Google Gemini API）を簡単に利用するためのクライアントライブラリ、およびテンプレートベースのプロンプト生成ユーティリティを提供します。`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return cmd.Help()
 	},
-	// PersistentPreRunE は clibase.Execute の引数として渡されるため、定義のみ残します。
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 		return initAppPreRunE(cmd, args)
 	},
@@ -36,7 +41,6 @@ var rootCmd = &cobra.Command{
 
 // checkAPIKey は、APIキー環境変数が設定されているかを確認します。
 func checkAPIKey() error {
-	// 以前記憶したロジック (GEMINI_API_KEY または GOOGLE_API_KEY を確認)
 	if os.Getenv("GEMINI_API_KEY") == "" && os.Getenv("GOOGLE_API_KEY") == "" {
 		return fmt.Errorf("致命的エラー: GEMINI_API_KEY または GOOGLE_API_KEY 環境変数が設定されていません。")
 	}
@@ -45,7 +49,6 @@ func checkAPIKey() error {
 
 func initAppPreRunE(cmd *cobra.Command, args []string) error {
 
-	// 1. slog ハンドラの設定
 	logLevel := slog.LevelInfo
 	if clibase.Flags.Verbose {
 		logLevel = slog.LevelDebug
@@ -55,32 +58,24 @@ func initAppPreRunE(cmd *cobra.Command, args []string) error {
 	})
 	slog.SetDefault(slog.New(handler))
 
-	// 2. APIキーチェック
 	err := checkAPIKey()
 	if err != nil {
 		slog.Error("🚨 APIKeyの取得に失敗しました", "error", err)
 		return fmt.Errorf("APIKeyの取得に失敗しました: %w", err)
 	}
 
-	// 3. タイムアウト設定をコンテキストに格納するなどのロジックを追加可能
-	// (今回は httpkit.Client の初期化ロジックがないため、Contextへの格納は省略)
-
 	slog.Info("アプリケーション設定初期化完了")
 	return nil
 }
 
-// addAppPersistentFlags は、アプリケーション固有の永続フラグをルートコマンドに追加します。
-// フラグの定義をこの関数内に移動させます。
 func addAppPersistentFlags(rootCmd *cobra.Command) {
-	// Timeout と ModelName にバインド
 	rootCmd.PersistentFlags().IntVarP(&Timeout, "timeout", "t", 60, "APIリクエストのタイムアウト時間 (秒)")
 	rootCmd.PersistentFlags().StringVarP(&ModelName, "model", "m", "gemini-2.5-flash", "使用するGeminiモデル名")
 }
 
-// Execute は、clibase.Execute を使用してルートコマンドの構築と実行を委譲します。
 func Execute() {
 	clibase.Execute(
-		"go-ai-client", // プロジェクト名に合わせて修正
+		"go-ai-client",
 		addAppPersistentFlags,
 		initAppPreRunE,
 		genericCmd,
@@ -88,14 +83,65 @@ func Execute() {
 	)
 }
 
-// サブコマンドの仮定義 (Execute 関数で参照されるため)
-/*
-var genericCmd = &cobra.Command{Use: "generic", Short: "自由なテキストをGemini APIに送信します。"}
-var PromptCmd = &cobra.Command{Use: "prompt", Short: "テンプレートを使用してプロンプトを構築し、Gemini APIに送信します。"}
-*/
-
-// init は、パッケージロード時に実行される Go の組み込み関数です。
-// 引数を受け取れないため、以前ご提示いただいたコードは修正が必要です。
 func init() {
-	// フラグの追加ロジックは addAppPersistentFlags に移動しました。
+	//
+}
+
+// --- 共通ユーティリティ関数（すべてのサブコマンドで使用） ---
+
+// readInput は、コマンドライン引数または標準入力からテキストを読み込みます。
+func readInput(cmd *cobra.Command, args []string) ([]byte, error) {
+	if len(args) > 0 {
+		return []byte(strings.Join(args, " ")), nil
+	}
+	input, err := io.ReadAll(cmd.InOrStdin())
+	if err != nil {
+		return nil, fmt.Errorf("標準入力からの読み込みエラー: %w", err)
+	}
+	if len(input) == 0 {
+		return nil, fmt.Errorf("致命的エラー: 処理するテキストがコマンドライン引数または標準入力から提供されていません。")
+	}
+	return input, nil
+}
+
+// GenerateAndOutput は、Gemini APIを呼び出し、結果を標準出力に出力する共通ロジックです。（公開）
+func GenerateAndOutput(ctx context.Context, inputContent []byte, subcommandMode, modelName string) error {
+	clientCtx, cancel := context.WithTimeout(ctx, time.Duration(Timeout)*time.Second)
+	defer cancel()
+
+	client, err := gemini.NewClientFromEnv(clientCtx)
+	if err != nil {
+		return fmt.Errorf("Geminiクライアントの初期化に失敗しました: %w", err)
+	}
+
+	var finalPrompt string
+	modeDisplay := subcommandMode
+	inputText := string(inputContent)
+
+	if subcommandMode == "generic" {
+		finalPrompt = inputText
+		modeDisplay = "テンプレートなし (generic)"
+	} else {
+		finalPrompt, err = prompt.BuildFullPrompt(inputText, subcommandMode)
+		if err != nil {
+			return fmt.Errorf("failed to build full prompt (mode: %s): %w", subcommandMode, err)
+		}
+	}
+
+	slog.Info("応答生成リクエスト送信", "model", modelName, "mode", modeDisplay, "timeout", Timeout)
+	fmt.Printf("モデル %s で応答を生成中 (モード: %s, Timeout: %d秒)...\n", modelName, modeDisplay, Timeout)
+
+	resp, err := client.GenerateContent(clientCtx, finalPrompt, modelName)
+
+	if err != nil {
+		return fmt.Errorf("API処理中にエラーが発生しました: %w", err)
+	}
+
+	fmt.Println("\n" + separator)
+	fmt.Printf("|| 応答 (モデル: %s, モード: %s) ||\n", modelName, modeDisplay)
+	fmt.Println(separator)
+	fmt.Println(resp.Text)
+	fmt.Println(separator)
+
+	return nil
 }
