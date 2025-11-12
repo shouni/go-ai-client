@@ -30,7 +30,7 @@ Goモジュールとしてプロジェクトに追加します。
 
 ```bash
 go get github.com/shouni/go-ai-client/v2
-````
+```
 
 ### 🗝️ APIキーの設定
 
@@ -79,56 +79,6 @@ cat input.txt | ./bin/ai-client prompt -d dialogue -m gemini-2.5-flash
 #### 2\. Goコード内でのクライアント使用と詳細設定
 
 クライアントには**最終的なプロンプト文字列**を渡し、**クライアント初期化時**にモデルパラメータとリトライパラメータを設定します。
-
-```go
-package main
-
-import (
-    "context"
-    "fmt"
-    "log"
-    "os"
-    "time"
-
-    "github.com/shouni/go-ai-client/v2/pkg/ai/gemini"
-    "github.com/shouni/go-ai-client/v2/pkg/promptbuilder" 
-)
-
-func main() {
-    // APIリクエスト全体のタイムアウトをコンテキストで制御
-    ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
-    defer cancel()
-
-    tempValue := float32(0.9) // 創造性を高めるために高めに設定
-    
-    // クライアント設定を定義
-    cfg := gemini.Config{
-       APIKey: os.Getenv("GEMINI_API_KEY"),
-       Temperature: &tempValue,
-       MaxRetries: 2,                 // 最大リトライ回数
-       InitialDelay: 30 * time.Second,  // 最初のディレイ (30秒)
-       MaxDelay: 120 * time.Second,      // ディレイの上限
-    }
-
-    client, err := gemini.NewClient(ctx, cfg) // NewClientを使用
-    if err != nil {
-       log.Fatalf("クライアント初期化エラー: %v", err)
-    }
-    
-    // ... (プロンプトの構築ロジック)
-    rawInput := "Go言語でAPIクライアントを作成する利点について教えてください。"
-    finalPrompt, _ := promptbuilder.BuildFullPrompt(rawInput, "solo") 
-    
-    response, err := client.GenerateContent(ctx, finalPrompt, "gemini-2.5-flash")
-    if err != nil {
-       log.Fatalf("コンテンツ生成エラー: %v", err)
-    }
-
-    fmt.Println("--- 応答 ---")
-    fmt.Printf("設定温度: %.1f, リトライ回数: %d\n", *cfg.Temperature, cfg.MaxRetries)
-    fmt.Println(response.Text)
-}
-```
 
 | `gemini.Config` フィールド | 役割 | CLIフラグ | デフォルト値 |
 | :--- | :--- | :--- |:---|
