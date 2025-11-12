@@ -25,14 +25,11 @@ var rootCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return cmd.Help()
 	},
-	// PersistentPreRunE で初期設定とDIを実行する
+	// PersistentPreRunE で初期設定のみを実行し、RunnerのDIはサブコマンドのRunEに任せる
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
-		// 1. 基本設定 (ログ、APIキーチェック)
-		if err := initAppPreRunE(cmd, args); err != nil {
-			return err
-		}
-		// 2. 依存関係の構築とDI
-		return SetupRunner(cmd.Context())
+		// 1. 基本設定 (ログ、APIキーチェック) のみ実行
+		// SetupRunner の呼び出しは削除されました。
+		return initAppPreRunE(cmd, args)
 	},
 }
 
@@ -47,7 +44,7 @@ func Execute() {
 		addAppPersistentFlags,
 		initAppPreRunE,
 		genericCmd,
-		PromptCmd,
+		promptCmd,
 	)
 }
 
@@ -58,6 +55,7 @@ func readInput(cmd *cobra.Command, args []string) ([]byte, error) {
 	if len(args) > 0 {
 		return []byte(strings.Join(args, " ")), nil
 	}
+	// cmd.InOrStdin() を使用して標準入力から読み込み
 	input, err := io.ReadAll(cmd.InOrStdin())
 	if err != nil {
 		return nil, fmt.Errorf("標準入力からの読み込みエラー: %w", err)

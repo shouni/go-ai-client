@@ -10,7 +10,7 @@ import (
 var promptMode string
 
 // PromptCmd は 'prompt' サブコマンドのインスタンスです。（公開）
-var PromptCmd = NewPromptCmd()
+var promptCmd = NewPromptCmd()
 
 // NewPromptCmd は 'prompt' コマンドを構築します。
 func NewPromptCmd() *cobra.Command {
@@ -25,7 +25,12 @@ func NewPromptCmd() *cobra.Command {
   ai-client prompt "猫と魚の会話" -d dialogue
 `,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			// 1. 入力内容の読み込み
+			// 1. SetupRunner の呼び出しを RunE の先頭に移動 (DIの実行) ★
+			if err := SetupRunner(cmd.Context()); err != nil {
+				return err // SetupRunnerでエラーが発生した場合、その具体的なエラーを返す
+			}
+
+			// 2. 入力内容の読み込み
 			inputContent, err := readInput(cmd, args)
 			if err != nil {
 				return err
@@ -40,7 +45,7 @@ func NewPromptCmd() *cobra.Command {
 				return errors.New("致命的エラー: 'mode' フラグ (-d) が必須です。")
 			}
 
-			// 2. 実行と出力 (共通ロジックを使用)
+			// 3. 実行と出力 (共通ロジックを使用)
 			return GenerateAndOutput(cmd.Context(), inputContent, promptMode)
 		},
 
@@ -55,6 +60,6 @@ func NewPromptCmd() *cobra.Command {
 }
 
 func init() {
-	PromptCmd = NewPromptCmd()
-	rootCmd.AddCommand(PromptCmd)
+	promptCmd = NewPromptCmd()
+	rootCmd.AddCommand(promptCmd)
 }
