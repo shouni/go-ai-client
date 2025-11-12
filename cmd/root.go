@@ -46,17 +46,9 @@ func Execute() {
 		"go-ai-client",
 		addAppPersistentFlags,
 		initAppPreRunE,
-		genericCmd, // genericCmd, PromptCmd は外部で定義されていると想定
+		genericCmd,
 		PromptCmd,
 	)
-}
-
-func init() {
-	// init()内でサブコマンドを登録し、mainパッケージからの実行時に参照できるようにする
-	genericCmd = NewGenericCmd()
-	PromptCmd = NewPromptCmd()
-	rootCmd.AddCommand(genericCmd)
-	rootCmd.AddCommand(PromptCmd)
 }
 
 // --- 共通ユーティリティ関数（Rootに近いためここに配置） ---

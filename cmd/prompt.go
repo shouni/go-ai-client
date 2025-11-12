@@ -53,3 +53,8 @@ func NewPromptCmd() *cobra.Command {
 
 	return cmd
 }
+
+func init() {
+	PromptCmd = NewPromptCmd()
+	rootCmd.AddCommand(PromptCmd)
+}

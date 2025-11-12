@@ -29,3 +29,8 @@ func NewGenericCmd() *cobra.Command {
 	}
 	return cmd
 }
+
+func init() {
+	genericCmd = NewGenericCmd()
+	rootCmd.AddCommand(genericCmd)
+}
