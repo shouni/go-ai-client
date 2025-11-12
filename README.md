@@ -145,8 +145,10 @@ func main() {
 | :--- | :--- |
 | `pkg/ai/gemini` | Google Gemini API専用のクライアント実装。 |
 | `pkg/ai/gemini/client.go` | **Gemini APIクライアント**のコアロジック。**API通信、リトライ、レスポンス処理、温度、およびリトライディレイ設定**を担う。 |
-| `pkg/prompt` | プロンプトのテンプレートおよび構築ロジック。 |
-| `pkg/prompt/prompt.go` | **テンプレートベースのプロンプト定義**と、入力内容を埋め込む `BuildFullPrompt` 関数を提供。テンプレートは事前解析され、キャッシュされる。 |
+| `pkg/promptbuilder` | プロンプトのテンプレートおよび構築ロジック。 |
+| `pkg/promptbuilder/template_builder.go` | **テンプレートベースのプロンプト定義**と、入力内容を埋め込む `BuildFullPrompt` 関数を提供。テンプレートは事前解析され、キャッシュされる。 |
+| `pkg/runner` | CLIからの依存関係を注入され、AI実行のワークフローを管理するロジック。 |
+| `pkg/runner/runner.go` | `GenerateContent` の呼び出しを含む実行処理をカプセル化。 |
 
 -----
 
