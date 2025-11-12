@@ -40,11 +40,6 @@ func NewPromptCmd() *cobra.Command {
 				return errors.New("致命的エラー: テンプレートモード (prompt) は、処理するための入力テキストを必要とします。コマンドライン引数または標準入力で提供してください。")
 			}
 
-			// モードフラグの必須チェック
-			if promptMode == "" {
-				return errors.New("致命的エラー: 'mode' フラグ (-d) が必須です。")
-			}
-
 			// 3. 実行と出力 (共通ロジックを使用)
 			return GenerateAndOutput(cmd.Context(), inputContent, promptMode)
 		},
