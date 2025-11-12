@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/shouni/go-ai-client/v2/pkg/ai/gemini"
-	"github.com/shouni/go-ai-client/v2/pkg/prompts"
 	clibase "github.com/shouni/go-cli-base"
 	"github.com/spf13/cobra"
 )
@@ -122,7 +121,7 @@ func GenerateAndOutput(ctx context.Context, inputContent []byte, subcommandMode,
 		finalPrompt = inputText
 		modeDisplay = "テンプレートなし (generic)"
 	} else {
-		finalPrompt, err = prompt.BuildFullPrompt(inputText, subcommandMode)
+		finalPrompt, err = promptbuilder.Build(inputText, subcommandMode)
 		if err != nil {
 			return fmt.Errorf("failed to build full prompt (mode: %s): %w", subcommandMode, err)
 		}

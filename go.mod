@@ -3,6 +3,7 @@ module github.com/shouni/go-ai-client/v2
 go 1.25
 
 require (
+	github.com/shouni/go-ai-client v1.0.7
 	github.com/shouni/go-cli-base v1.0.5
 	github.com/shouni/go-utils v1.0.8
 	github.com/spf13/cobra v1.10.1
@@ -21,8 +22,6 @@ require (
 	github.com/googleapis/enterprise-certificate-proxy v0.3.4 // indirect
 	github.com/gorilla/websocket v1.5.3 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
-	github.com/shouni/go-ai-client v1.0.7 // indirect
-	github.com/shouni/go-web-exact v1.0.6 // indirect
 	github.com/spf13/pflag v1.0.10 // indirect
 	go.opencensus.io v0.24.0 // indirect
 	golang.org/x/crypto v0.40.0 // indirect
