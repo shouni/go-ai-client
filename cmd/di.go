@@ -21,34 +21,28 @@ func SetRunner(r *runner.Runner) {
 }
 
 // SetupRunner は、コマンド実行に必要な全ての依存関係を構築し、グローバル変数 (aiRunner) にDIします。
-// これは cobra の PersistentPreRunE で呼び出されます。
 func SetupRunner(ctx context.Context) error {
-	// 既に設定済みであればスキップ（二重実行防止）
+	// 既に設定済みであればスキップ
 	if aiRunner != nil {
 		return nil
 	}
 
-	// 1. Gemini Client の初期化
+	// 1. Gemini Client の初期化とエラー処理の集約
 	client, err := gemini.NewClientFromEnv(ctx)
 	if err != nil {
 		slog.Error("🚨 Geminiクライアント初期化失敗", "error", err)
 		return fmt.Errorf("Geminiクライアントの初期化に失敗しました。認証情報（GEMINI_API_KEYなど）を確認してください: %w", err)
 	}
 
-	// 2. タイムアウト設定
-	timeoutDuration := time.Duration(Timeout) * time.Second
-
-	// 3. Runner のインスタンス構築（DI実行）
+	// 2. Runner のインスタンス構築とDI（Timeout変数を直接利用）
 	r := runner.NewRunner(
-		client, // Client: gemini.GenerativeModel
+		client,
 		runner.TemplateGetterFunc(prompts.GetTemplate),
 		promptbuilder.NewPromptBuilder,
 		ModelName,
-		timeoutDuration,
+		time.Duration(Timeout)*time.Second, // Timeoutフラグを直接Durationに変換
 	)
 
-	// 4. DIの完了
-	SetRunner(r)
-
+	SetRunner(r) // DIの完了
 	return nil
 }
