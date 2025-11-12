@@ -90,8 +90,8 @@ import (
     "os"
     "time"
 
-    "go-ai-client/pkg/ai/gemini"
-    "go-ai-client/pkg/prompt" 
+    "github.com/shouni/go-ai-client/v2/pkg/ai/gemini"
+    "github.com/shouni/go-ai-client/v2/pkg/promptbuilder" 
 )
 
 func main() {
@@ -116,8 +116,8 @@ func main() {
     }
     
     // ... (プロンプトの構築ロジック)
-    rawInput := "Go言語でAPIクライアントを作成する利点について教えてください。" 
-    finalPrompt, _ := prompt.BuildFullPrompt(rawInput, "solo") 
+    rawInput := "Go言語でAPIクライアントを作成する利点について教えてください。"
+    finalPrompt, _ := promptbuilder.BuildFullPrompt(rawInput, "solo") 
     
     response, err := client.GenerateContent(ctx, finalPrompt, "gemini-2.5-flash")
     if err != nil {
