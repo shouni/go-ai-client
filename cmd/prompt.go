@@ -25,7 +25,7 @@ func NewPromptCmd() *cobra.Command {
   ai-client prompt "猫と魚の会話" -d dialogue
 `,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			// 1. 入力内容の読み込み (readInput は cmd_core.go で定義)
+			// 1. 入力内容の読み込み
 			inputContent, err := readInput(cmd, args)
 			if err != nil {
 				return err
@@ -51,7 +51,7 @@ func NewPromptCmd() *cobra.Command {
 
 	// promptCmd のみに 'mode' フラグを設定
 	cmd.Flags().StringVarP(&promptMode, "mode", "d", "solo", "生成するスクリプトのモード (solo, dialogue)")
-	cmd.MarkFlagRequired("mode") // フラグを必須にする
+	cmd.MarkFlagRequired("mode")
 
 	return cmd
 }

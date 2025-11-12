@@ -24,7 +24,6 @@ func NewGenericCmd() *cobra.Command {
 				return err
 			}
 
-			// ModelName と GenerateAndOutput は cmd_core.go で定義
 			return GenerateAndOutput(cmd.Context(), inputContent, "generic", ModelName)
 		},
 	}

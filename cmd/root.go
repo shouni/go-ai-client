@@ -24,9 +24,6 @@ var (
 
 const separator = "=============================================="
 
-// clientKey は context.Context に格納するための非公開キー
-type clientKey struct{}
-
 // rootCmd は、このアプリケーションのメインとなるコマンドです。
 var rootCmd = &cobra.Command{
 	Use:   "go-ai-client",
@@ -49,7 +46,7 @@ func checkAPIKey() error {
 }
 
 func initAppPreRunE(cmd *cobra.Command, args []string) error {
-
+	// ログレベル設定
 	logLevel := slog.LevelInfo
 	if clibase.Flags.Verbose {
 		logLevel = slog.LevelDebug
@@ -59,6 +56,7 @@ func initAppPreRunE(cmd *cobra.Command, args []string) error {
 	})
 	slog.SetDefault(slog.New(handler))
 
+	// APIキーチェック
 	err := checkAPIKey()
 	if err != nil {
 		slog.Error("🚨 APIKeyの取得に失敗しました", "error", err)
@@ -79,13 +77,17 @@ func Execute() {
 		"go-ai-client",
 		addAppPersistentFlags,
 		initAppPreRunE,
-		genericCmd,
-		PromptCmd,
+		genericCmd, // NewGenericCmd() から取得
+		PromptCmd,  // NewPromptCmd() から取得
 	)
 }
 
 func init() {
-	//
+	// init()内でサブコマンドを登録し、mainパッケージからの実行時に参照できるようにする
+	genericCmd = NewGenericCmd()
+	PromptCmd = NewPromptCmd()
+	rootCmd.AddCommand(genericCmd)
+	rootCmd.AddCommand(PromptCmd)
 }
 
 // --- 共通ユーティリティ関数（すべてのサブコマンドで使用） ---
@@ -105,15 +107,26 @@ func readInput(cmd *cobra.Command, args []string) ([]byte, error) {
 	return input, nil
 }
 
-// GenerateAndOutput は、Gemini APIを呼び出し、結果を標準出力に出力する共通ロジックです。（公開）
-func GenerateAndOutput(ctx context.Context, inputContent []byte, subcommandMode, modelName string) error {
+// createGeminiClient は、タイムアウト設定に基づいて Gemini クライアントを初期化します。
+// 責務を GenerateAndOutput から分離。
+func createGeminiClient(ctx context.Context) (gemini.GenerativeModel, context.Context, context.CancelFunc, error) {
 	clientCtx, cancel := context.WithTimeout(ctx, time.Duration(Timeout)*time.Second)
-	defer cancel()
 
 	client, err := gemini.NewClientFromEnv(clientCtx)
 	if err != nil {
-		return fmt.Errorf("Geminiクライアントの初期化に失敗しました: %w", err)
+		cancel()
+		return nil, nil, nil, fmt.Errorf("Geminiクライアントの初期化に失敗しました: %w", err)
 	}
+	return client, clientCtx, cancel, nil
+}
+
+// GenerateAndOutput は、Gemini APIを呼び出し、結果を標準出力に出力する共通ロジックです。（公開）
+func GenerateAndOutput(ctx context.Context, inputContent []byte, subcommandMode, modelName string) error {
+	client, clientCtx, cancel, err := createGeminiClient(ctx)
+	if err != nil {
+		return err
+	}
+	defer cancel() // タイムアウト処理のためにキャンセルを遅延実行
 
 	var finalPrompt string
 	modeDisplay := subcommandMode
@@ -132,12 +145,14 @@ func GenerateAndOutput(ctx context.Context, inputContent []byte, subcommandMode,
 	slog.Info("応答生成リクエスト送信", "model", modelName, "mode", modeDisplay, "timeout", Timeout)
 	fmt.Printf("モデル %s で応答を生成中 (モード: %s, Timeout: %d秒)...\n", modelName, modeDisplay, Timeout)
 
+	// API呼び出し
 	resp, err := client.GenerateContent(clientCtx, finalPrompt, modelName)
 
 	if err != nil {
 		return fmt.Errorf("API処理中にエラーが発生しました: %w", err)
 	}
 
+	// 結果出力
 	fmt.Println("\n" + separator)
 	fmt.Printf("|| 応答 (モデル: %s, モード: %s) ||\n", modelName, modeDisplay)
 	fmt.Println(separator)
@@ -151,13 +166,13 @@ func GenerateAndOutput(ctx context.Context, inputContent []byte, subcommandMode,
 // 最終的なプロンプト文字列を構築します。
 // この関数は GetTemplate と PromptBuilder のロジックを統合します。
 func BuildFullPrompt(inputText string, mode string) (string, error) {
-	// 1. テンプレートの取得 (prompts.goで記憶済み)
+	// 1. テンプレートの取得 (pkg/prompt 内の GetTemplate を使用)
 	templateName, templateContent, err := prompts.GetTemplate(mode)
 	if err != nil {
 		return "", err
 	}
 
-	// 2. PromptBuilder の初期化 (promptbuilder.goで記憶済み)
+	// 2. PromptBuilder の初期化 (pkg/promptbuilder 内の NewPromptBuilder を使用)
 	builder, err := promptbuilder.NewPromptBuilder(templateName, templateContent)
 	if err != nil {
 		return "", err
