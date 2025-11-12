@@ -1,4 +1,4 @@
-package prompts
+package promptbuilder
 
 import (
 	_ "embed"
@@ -44,7 +44,7 @@ func NewPromptBuilder(name string, templateContent string) (*PromptBuilder, erro
 // Build は ReviewTemplateData を埋め込み、Geminiへ送るための最終的なプロンプト文字列を完成させます。
 func (b *PromptBuilder) Build(data TemplateData) (string, error) {
 	if b.tmpl == nil {
-		return "", fmt.Errorf("プロンプトテンプレートが適切に初期化されていません。NewRPromptBuilderが正しく呼び出されたか確認してください")
+		return "", fmt.Errorf("プロンプトテンプレートが適切に初期化されていません。NewPromptBuilderが正しく呼び出されたか確認してください")
 	}
 
 	var sb strings.Builder

@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"github.com/shouni/go-ai-client/v2/pkg/ai/gemini"
+	"github.com/shouni/go-ai-client/v2/pkg/promptbuilder"
+	"github.com/shouni/go-ai-client/v2/prompts"
 	clibase "github.com/shouni/go-cli-base"
 	"github.com/spf13/cobra"
 )
@@ -121,7 +123,7 @@ func GenerateAndOutput(ctx context.Context, inputContent []byte, subcommandMode,
 		finalPrompt = inputText
 		modeDisplay = "テンプレートなし (generic)"
 	} else {
-		finalPrompt, err = promptbuilder.Build(inputText, subcommandMode)
+		finalPrompt, err = BuildFullPrompt(inputText, subcommandMode)
 		if err != nil {
 			return fmt.Errorf("failed to build full prompt (mode: %s): %w", subcommandMode, err)
 		}
@@ -143,4 +145,33 @@ func GenerateAndOutput(ctx context.Context, inputContent []byte, subcommandMode,
 	fmt.Println(separator)
 
 	return nil
+}
+
+// BuildFullPrompt は、指定されたモードと入力コンテンツに基づいて
+// 最終的なプロンプト文字列を構築します。
+// この関数は GetTemplate と PromptBuilder のロジックを統合します。
+func BuildFullPrompt(inputText string, mode string) (string, error) {
+	// 1. テンプレートの取得 (prompts.goで記憶済み)
+	templateName, templateContent, err := prompts.GetTemplate(mode)
+	if err != nil {
+		return "", err
+	}
+
+	// 2. PromptBuilder の初期化 (promptbuilder.goで記憶済み)
+	builder, err := promptbuilder.NewPromptBuilder(templateName, templateContent)
+	if err != nil {
+		return "", err
+	}
+
+	// 3. データの埋め込みとプロンプトの構築
+	data := promptbuilder.TemplateData{
+		Content: inputText,
+	}
+
+	finalPrompt, err := builder.Build(data)
+	if err != nil {
+		return "", fmt.Errorf("プロンプトの実行と構築に失敗しました: %w", err)
+	}
+
+	return finalPrompt, nil
 }
