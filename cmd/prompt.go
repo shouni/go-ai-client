@@ -65,8 +65,6 @@ func NewPromptCmd() *cobra.Command {
 			// 3. 実行と出力
 			return GenerateAndOutput(cmd.Context(), generateContent.Text)
 		},
-
-		Args: cobra.ArbitraryArgs,
 	}
 
 	// promptCmd のみに 'mode' フラグを設定
