@@ -13,6 +13,12 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// セパレータの定数定義
+const (
+	separatorHeavy = "=============================================="
+	separatorLight = "----------------------------------------------"
+)
+
 // GenerateAndOutput は、RunnerのRunメソッドを呼び出し、結果として得られた
 // AIの応答内容を標準出力に出力し、メタ情報を付加します。
 func GenerateAndOutput(ctx context.Context, inputContent []byte, subcommandMode string) error {
@@ -28,30 +34,30 @@ func GenerateAndOutput(ctx context.Context, inputContent []byte, subcommandMode 
 		return err
 	}
 
-	// 2. 結果を整形し、iohandler を使用して出力する (I/Oの責務を委譲) ★
+	// 2. 結果を整形し、iohandler を使用して出力する (I/Oの責務を委譲)
 
 	// 全ての出力を一つの文字列に組み立てる
 	var sb strings.Builder
 
-	// 応答の開始セパレータとヘッダー
-	sb.WriteString("\n==============================================")
+	// 応答の開始セパレータとヘッダー (定数を使用)
+	sb.WriteString("\n" + separatorHeavy)
 	sb.WriteString("\n🤖 AIモデルからの応答:")
-	sb.WriteString("\n==============================================\n")
-
-	// AIの応答本文
+	sb.WriteString("\n" + separatorHeavy + "\n")
 	sb.WriteString(outputContent)
-
-	// 応答の終了セパレータとメタ情報
-	sb.WriteString("\n\n----------------------------------------------")
-
-	// ModelNameはGlobal変数として使用可能と仮定
-	sb.WriteString(fmt.Sprintf("\nModel: %s", ModelName))
-	sb.WriteString(fmt.Sprintf("\n実行モード: %s", subcommandMode))
-	sb.WriteString(fmt.Sprintf("\n時刻: %s", time.Now().Format("2006-01-02 15:04:05")))
-	sb.WriteString("\n----------------------------------------------\n")
+	sb.WriteString("\n\n" + separatorLight)
+	sb.WriteString(fmt.Sprintf("\nModel: %s", aiRunner.ModelName))
+	displayMode := subcommandMode
+	if displayMode == "" {
+		displayMode = "テンプレートなし (汎用モード)"
+	}
+	sb.WriteString(fmt.Sprintf("\n実行モード: %s", displayMode))
+	sb.WriteString(fmt.Sprintf("\n出力処理時刻: %s", time.Now().Format("2006-01-02 15:04:05")))
+	sb.WriteString("\n" + separatorLight + "\n")
 
 	return iohandler.WriteOutputString("", sb.String())
 }
+
+// checkAPIKey、initAppPreRunE 関数は変更なし
 
 // checkAPIKey は、APIキー環境変数が設定されているかを確認します。
 func checkAPIKey() error {
