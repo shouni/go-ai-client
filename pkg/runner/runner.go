@@ -99,17 +99,19 @@ func (r *Runner) Run(ctx context.Context, inputContent []byte, mode string) (str
 		// テンプレートに基づいてプロンプトを構築
 		finalPrompt, err = r.BuildFullPrompt(inputText, mode)
 		if err != nil {
-			// errには無効なmodeの検証結果が含まれる
 			return "", fmt.Errorf("failed to build full prompt (mode: %s): %w", mode, err)
 		}
 		slog.Debug("プロンプト構築", "タイプ", fmt.Sprintf("テンプレート使用 (mode: %s)", mode))
 	} else {
-		// mode が空の場合、テンプレートを使わない
 		finalPrompt = inputText
 		slog.Debug("プロンプト構築", "タイプ", "テンプレートなし (generic)")
 	}
 
-	slog.Info("応答生成リクエスト送信", "model", r.ModelName, "mode", mode, "timeout", r.Timeout)
+	logMode := mode
+	if mode == "" {
+		logMode = "テンプレートなし"
+	}
+	slog.Info("応答生成リクエスト送信", "model", r.ModelName, "mode", logMode, "timeout", r.Timeout)
 	// API呼び出し
 	resp, err := r.Client.GenerateContent(clientCtx, finalPrompt, r.ModelName)
 
