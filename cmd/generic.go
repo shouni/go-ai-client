@@ -31,7 +31,7 @@ func NewGenericCmd() *cobra.Command {
 			}
 
 			// 3. 実行と出力
-			return GenerateAndOutput(cmd.Context(), inputContent, "generic")
+			return GenerateAndOutput(cmd.Context(), inputContent, "")
 		},
 	}
 	return cmd

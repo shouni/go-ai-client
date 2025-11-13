@@ -81,39 +81,41 @@ func (r *Runner) BuildFullPrompt(inputText string, mode string) (string, error) 
 	return finalPrompt, nil
 }
 
-// Run は、プロンプトを構築し、APIを呼び出し、結果を標準出力に出力する共通ロジックです。
-func (r *Runner) Run(ctx context.Context, inputContent []byte, subcommandMode string) error {
+// Run は、プロンプトを構築し、APIを呼び出し、AIが生成したコンテンツ（文字列）を返します。
+// mode: 空文字列 ("") の場合はテンプレートを使用せず、それ以外の値（例: "solo", "dialogue"）は
+// テンプレート識別子として使用されます。
+func (r *Runner) Run(ctx context.Context, inputContent []byte, mode string) (string, error) {
+	// コンテキストのタイムアウトを設定
 	clientCtx, cancel := context.WithTimeout(ctx, r.Timeout)
 	defer cancel()
 
 	var finalPrompt string
-	modeDisplay := subcommandMode
 	inputText := string(inputContent)
 
-	if subcommandMode == "generic" {
-		finalPrompt = inputText
-		modeDisplay = "テンプレートなし (generic)"
-	} else {
+	// プロンプトの構築ロジック。
+	if mode != "" {
+		// mode がテンプレート識別子として使われる場合
 		var err error
-		finalPrompt, err = r.BuildFullPrompt(inputText, subcommandMode)
+		// テンプレートに基づいてプロンプトを構築
+		finalPrompt, err = r.BuildFullPrompt(inputText, mode)
 		if err != nil {
-			return fmt.Errorf("failed to build full prompt (mode: %s): %w", subcommandMode, err)
+			return "", fmt.Errorf("プロンプトテンプレートの構築に失敗しました (mode: %s): %w", mode, err)
 		}
+	} else {
+		finalPrompt = inputText
 	}
 
-	slog.Info("応答生成リクエスト送信", "model", r.ModelName, "mode", modeDisplay, "timeout", r.Timeout)
-	fmt.Printf("モデル %s で応答を生成中 (モード: %s, Timeout: %d秒)...\n", r.ModelName, modeDisplay, int(r.Timeout.Seconds()))
-
-	// API呼び出し
+	logMode := mode
+	if mode == "" {
+		logMode = "テンプレートなし"
+	}
+	slog.Info("応答生成リクエスト送信", "model", r.ModelName, "mode", logMode, "timeout", r.Timeout)
 	resp, err := r.Client.GenerateContent(clientCtx, finalPrompt, r.ModelName)
 
 	if err != nil {
-		return fmt.Errorf("API処理中にエラーが発生しました: %w", err)
+		return "", fmt.Errorf("Gemini APIでのコンテンツ生成中にエラーが発生しました: %w", err)
 	}
 
-	// 結果出力
-	fmt.Printf("|| 応答 (モデル: %s, モード: %s) ||\n", r.ModelName, modeDisplay)
-	fmt.Println(resp.Text)
-
-	return nil
+	// AIが生成したテキストのみを返却
+	return resp.Text, nil
 }

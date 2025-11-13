@@ -5,21 +5,71 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"strings"
+	"time"
 
 	clibase "github.com/shouni/go-cli-base"
+	"github.com/shouni/go-utils/iohandler"
 	"github.com/spf13/cobra"
 )
 
-// GenerateAndOutput は、RunnerのRunメソッドを呼び出すように変更します。
-// ModelName は Runner 内部で保持されるため、引数から削除されました。
-func GenerateAndOutput(ctx context.Context, inputContent []byte, subcommandMode string) error {
+// セパレータの定数定義
+const (
+	separatorHeavy = "=============================================="
+	separatorLight = "----------------------------------------------"
+)
+
+// GenerateAndOutput は、RunnerのRunメソッドを呼び出し、結果として得られた
+// AIの応答内容を標準出力に出力し、メタ情報を付加します。
+func GenerateAndOutput(ctx context.Context, inputContent []byte, mode string) error {
 	// RunnerのインスタンスがDIされていることを確認
 	if aiRunner == nil {
 		return fmt.Errorf("内部エラー: AI Runnerが適切に初期化されていません。SetupRunnerが呼び出されましたか？")
 	}
-	// Runnerに処理を委譲
-	return aiRunner.Run(ctx, inputContent, subcommandMode)
+
+	// Runnerが使用する表示モードを決定
+	displayMode := mode
+	if displayMode == "" {
+		displayMode = "テンプレートなし (汎用モード)"
+	}
+	slog.Info("応答を生成中", "model", aiRunner.ModelName, "mode", displayMode, "timeout", int(aiRunner.Timeout.Seconds()))
+
+	// 1. Runnerに処理を委譲し、結果の文字列を受け取る
+	outputContent, err := aiRunner.Run(ctx, inputContent, mode)
+
+	if err != nil {
+		// Runner内のAPIエラーなどをそのまま返す
+		return err
+	}
+
+	// 2. 結果を整形し、iohandler を使用して出力する (I/Oの責務を委譲)
+
+	// 全ての出力を一つの文字列に組み立てる
+	var sb strings.Builder
+
+	// 応答の開始セパレータとヘッダー (定数を使用)
+	sb.WriteString("\n" + separatorHeavy)
+	sb.WriteString("\n🤖 AIモデルからの応答:")
+	sb.WriteString("\n" + separatorHeavy + "\n")
+
+	// AIの応答本文
+	sb.WriteString(outputContent)
+
+	// 応答の終了セパレータとメタ情報 (定数を使用)
+	sb.WriteString("\n\n" + separatorLight)
+
+	// メタ情報
+	sb.WriteString(fmt.Sprintf("\nModel: %s", aiRunner.ModelName))
+	sb.WriteString(fmt.Sprintf("\n実行モード: %s", displayMode))
+	sb.WriteString(fmt.Sprintf("\n出力処理時刻: %s", time.Now().Format("2006-01-02 15:04:05")))
+
+	// 終了セパレータ
+	sb.WriteString("\n" + separatorLight + "\n")
+
+	return iohandler.WriteOutputString("", sb.String()) // 第一引数の空文字列は標準出力を意味する
 }
+
+// checkAPIKey、initAppPreRunE 関数は変更なし
 
 // checkAPIKey は、APIキー環境変数が設定されているかを確認します。
 func checkAPIKey() error {
