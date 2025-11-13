@@ -82,29 +82,34 @@ func (r *Runner) BuildFullPrompt(inputText string, mode string) (string, error) 
 }
 
 // Run は、プロンプトを構築し、APIを呼び出し、AIが生成したコンテンツ（文字列）を返します。
-func (r *Runner) Run(ctx context.Context, inputContent []byte, subcommandMode string) (string, error) {
+// mode: 空文字列 ("") の場合はテンプレートを使用せず、それ以外の値（例: "solo", "dialogue"）は
+// テンプレート識別子として使用されます。
+func (r *Runner) Run(ctx context.Context, inputContent []byte, mode string) (string, error) {
 	// コンテキストのタイムアウトを設定
 	clientCtx, cancel := context.WithTimeout(ctx, r.Timeout)
 	defer cancel()
 
 	var finalPrompt string
-	modeDisplay := subcommandMode
 	inputText := string(inputContent)
 
-	// プロンプトの構築
-	if subcommandMode == "generic" {
-		finalPrompt = inputText
-		modeDisplay = "テンプレートなし (generic)"
-	} else {
+	// プロンプトの構築ロジック。
+	if mode != "" {
+		// mode がテンプレート識別子として使われる場合
 		var err error
 		// テンプレートに基づいてプロンプトを構築
-		finalPrompt, err = r.BuildFullPrompt(inputText, subcommandMode)
+		finalPrompt, err = r.BuildFullPrompt(inputText, mode)
 		if err != nil {
-			return "", fmt.Errorf("failed to build full prompt (mode: %s): %w", subcommandMode, err)
+			// errには無効なmodeの検証結果が含まれる
+			return "", fmt.Errorf("failed to build full prompt (mode: %s): %w", mode, err)
 		}
+		slog.Debug("プロンプト構築", "タイプ", fmt.Sprintf("テンプレート使用 (mode: %s)", mode))
+	} else {
+		// mode が空の場合、テンプレートを使わない
+		finalPrompt = inputText
+		slog.Debug("プロンプト構築", "タイプ", "テンプレートなし (generic)")
 	}
 
-	slog.Info("応答生成リクエスト送信", "model", r.ModelName, "mode", modeDisplay, "timeout", r.Timeout)
+	slog.Info("応答生成リクエスト送信", "model", r.ModelName, "mode", mode, "timeout", r.Timeout)
 	// API呼び出し
 	resp, err := r.Client.GenerateContent(clientCtx, finalPrompt, r.ModelName)
 
@@ -112,5 +117,6 @@ func (r *Runner) Run(ctx context.Context, inputContent []byte, subcommandMode st
 		return "", fmt.Errorf("API処理中にエラーが発生しました: %w", err)
 	}
 
+	// AIが生成したテキストのみを返却
 	return resp.Text, nil
 }
