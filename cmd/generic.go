@@ -28,8 +28,8 @@ func NewGenericCmd() *cobra.Command {
   ai-client generic "量子コンピュータについて5行で解説せよ" -o output.txt`,
 
 		RunE: func(cmd *cobra.Command, args []string) error {
-			// 1. 入力内容の決定 (引数 > ファイル/stdin)
-			inputText, err := resolveInputContent(args, "")
+			// 1. 入力内容の決定
+			inputText, err := readInput(cmd, args)
 			if err != nil {
 				return err
 			}
@@ -42,11 +42,11 @@ func NewGenericCmd() *cobra.Command {
 			}
 
 			// 3. タイムアウト設定とコンテンツ生成
-			clientCtx, cancel := context.WithTimeout(cmd.Context(), time.Duration(Timeout)*time.Second)
+			clientCtx, cancel := context.WithTimeout(cmd.Context(), time.Duration(timeout)*time.Second)
 			defer cancel()
 
 			// Gemini APIを呼び出し
-			content, err := client.GenerateContent(clientCtx, inputText, ModelName)
+			content, err := client.GenerateContent(clientCtx, string(inputText), modelName)
 			if err != nil {
 				return fmt.Errorf("AIコンテンツ生成中にエラーが発生しました: %w", err)
 			}
