@@ -1,14 +1,14 @@
 package prompts
 
 import (
+	"bytes"
 	_ "embed"
 	"fmt"
-	"strings"
 	"text/template"
 )
 
 // ----------------------------------------------------------------
-// テンプレート構造体
+// インターフェース定義
 // ----------------------------------------------------------------
 
 // TemplateData はプロンプトのテンプレートに渡すデータ構造です。
@@ -16,41 +16,47 @@ type TemplateData struct {
 	Content string
 }
 
+// PromptBuilder は、テンプレートデータから最終的なプロンプト文字列を生成する責務を定義します。
+// これにより、具体的な実装（text/templateなど）から利用側を分離できます。
+type PromptBuilder interface {
+	Build(data TemplateData) (string, error)
+}
+
 // ----------------------------------------------------------------
 // ビルダー実装
 // ----------------------------------------------------------------
 
-// PromptBuilder はレビュープロンプトの構成を管理します。
-type PromptBuilder struct {
-	// 差分を埋め込むための text/template を保持します
+// textPromptBuilder は text/template を使用した PromptBuilder の具体的な実装です。
+type textPromptBuilder struct {
 	tmpl *template.Template
 }
 
-// NewPromptBuilder は PromptBuilder を初期化します。
-// テンプレート文字列を受け取り、それをパースして *template.Template を保持します。
+// NewPromptBuilder は PromptBuilder インターフェースを実装する新しいインスタンスを初期化します。
 // name はテンプレートの名前であり、主にデバッグやエラーメッセージの識別に利用されます。
-func NewPromptBuilder(name string, templateContent string) (*PromptBuilder, error) {
+func NewPromptBuilder(name string, templateContent string) (PromptBuilder, error) {
 	if templateContent == "" {
-		return nil, fmt.Errorf("プロンプトテンプレートの内容が空です")
+		// テンプレート名もエラーに含めると、利用側でのデバッグが容易になります。
+		return nil, fmt.Errorf("プロンプトテンプレート '%s' の内容が空です", name)
 	}
 
+	// Option: .Funcs() などでカスタム関数を登録することもできますが、今回はシンプルに保ちます。
 	tmpl, err := template.New(name).Parse(templateContent)
 	if err != nil {
-		return nil, fmt.Errorf("プロンプトテンプレートの解析に失敗しました: %w", err)
+		return nil, fmt.Errorf("プロンプトテンプレート '%s' の解析に失敗しました: %w", name, err)
 	}
-	return &PromptBuilder{tmpl: tmpl}, nil
+	// テンプレートの検証を助けるため、具体的な実装構造体（textPromptBuilder）のポインタを返します。
+	return &textPromptBuilder{tmpl: tmpl}, nil
 }
 
-// Build は ReviewTemplateData を埋め込み、Geminiへ送るための最終的なプロンプト文字列を完成させます。
-func (b *PromptBuilder) Build(data TemplateData) (string, error) {
-	if b.tmpl == nil {
-		return "", fmt.Errorf("プロンプトテンプレートが適切に初期化されていません。NewPromptBuilderが正しく呼び出されたか確認してください")
+// Build は TemplateData を埋め込み、最終的なプロンプト文字列を完成させます。
+func (b *textPromptBuilder) Build(data TemplateData) (string, error) {
+	// strings.Builder の代わりに bytes.Buffer を使用。これは io.Writer を実装しており、
+	// text/template の Execute に渡す標準的な方法です。
+	var buf bytes.Buffer
+	if err := b.tmpl.Execute(&buf, data); err != nil {
+		// tmpl.Name() を利用してエラーを具体化することも可能です
+		return "", fmt.Errorf("プロンプトテンプレート '%s' の実行に失敗しました: %w", b.tmpl.Name(), err)
 	}
 
-	var sb strings.Builder
-	if err := b.tmpl.Execute(&sb, data); err != nil {
-		return "", fmt.Errorf("プロンプトの実行に失敗しました: %w", err)
-	}
-
-	return sb.String(), nil
+	return buf.String(), nil
 }

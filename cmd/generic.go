@@ -22,10 +22,7 @@ func NewGenericCmd() *cobra.Command {
 
 利用例:
   # ファイルから読み込み、標準出力に出力
-  ai-client generic -i input.txt
-
-  # 直接テキストを渡し、ファイルに出力
-  ai-client generic "量子コンピュータについて5行で解説せよ" -o output.txt`,
+  ai-client generic -i input.txt`,
 
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// 1. 入力内容の決定
