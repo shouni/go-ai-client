@@ -11,12 +11,10 @@ var (
 	timeout   int
 )
 
-// --- サブコマンド（他のファイルで定義され、ここで利用される） ---
-// 外部ファイルで定義された公開変数を利用することを想定
 var genericCmd *cobra.Command
 var promptCmd *cobra.Command
 
-// NewGenericCmd と NewPromptCmd がどこかで実行され、genericCmd と promptCmd に値が設定されていることを前提とします。
+// init 関数でサブコマンドを初期化し、rootCmdに追加する準備をします。
 func init() {
 	// 依存関係を初期化
 	genericCmd = NewGenericCmd()
