@@ -1,8 +1,8 @@
 package cmd
 
 import (
-	"errors"
-
+	"github.com/shouni/go-ai-client/v2/pkg/ai/gemini"
+	"github.com/shouni/go-ai-client/v2/prompts"
 	"github.com/spf13/cobra"
 )
 
@@ -25,23 +25,45 @@ func NewPromptCmd() *cobra.Command {
   ai-client prompt "猫と魚の会話" -d dialogue
 `,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			// 1. SetupRunner の呼び出しを RunE の先頭に移動 (DIの実行) ★
-			if err := SetupRunner(cmd.Context()); err != nil {
-				return err // SetupRunnerでエラーが発生した場合、その具体的なエラーを返す
-			}
 
-			// 2. 入力内容の読み込み
+			// 入力内容の読み込み
 			inputContent, err := readInput(cmd, args)
 			if err != nil {
 				return err
 			}
+			inputText := string(inputContent)
 
-			if len(inputContent) == 0 {
-				return errors.New("致命的エラー: テンプレートモード (prompt) は、処理するための入力テキストを必要とします。コマンドライン引数または標準入力で提供してください。")
+			client, err := gemini.NewClientFromEnv(cmd.Context())
+			if err != nil {
+				return err
 			}
 
-			// 3. 実行と出力 (共通ロジックを使用)
-			return GenerateAndOutput(cmd.Context(), inputContent, promptMode)
+			name, content, err := prompts.GetTemplate(promptMode)
+			if err != nil {
+				return err
+			}
+
+			builder, err := prompts.NewPromptBuilder(name, content)
+			if err != nil {
+				return err
+			}
+
+			data := prompts.TemplateData{
+				Content: inputText,
+			}
+
+			finalPrompt, err := builder.Build(data)
+			if err != nil {
+				return err
+			}
+
+			generateContent, err := client.GenerateContent(cmd.Context(), finalPrompt, ModelName)
+			if err != nil {
+				return err
+			}
+
+			// 3. 実行と出力
+			return GenerateAndOutput(cmd.Context(), generateContent.Text)
 		},
 
 		Args: cobra.ArbitraryArgs,

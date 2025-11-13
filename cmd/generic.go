@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"github.com/shouni/go-ai-client/v2/pkg/ai/gemini"
 	"github.com/spf13/cobra"
 )
 
@@ -19,19 +20,25 @@ func NewGenericCmd() *cobra.Command {
   ai-client generic "量子コンピュータについて5行で解説せよ"`,
 
 		RunE: func(cmd *cobra.Command, args []string) error {
-			// 1. SetupRunner の呼び出しを RunE の先頭に移動 (DIの実行)
-			if err := SetupRunner(cmd.Context()); err != nil {
-				return err // SetupRunnerでエラーが発生した場合、その具体的なエラーを返す
-			}
 
-			// 2. 入力内容の読み込み
+			// 入力内容の読み込み
 			inputContent, err := readInput(cmd, args)
 			if err != nil {
 				return err
 			}
+			inputText := string(inputContent)
 
-			// 3. 実行と出力
-			return GenerateAndOutput(cmd.Context(), inputContent, "")
+			client, err := gemini.NewClientFromEnv(cmd.Context())
+			if err != nil {
+				return err
+			}
+
+			content, err := client.GenerateContent(cmd.Context(), inputText, ModelName)
+			if err != nil {
+				return err
+			}
+
+			return GenerateAndOutput(cmd.Context(), content.Text)
 		},
 	}
 	return cmd
