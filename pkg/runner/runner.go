@@ -113,7 +113,7 @@ func (r *Runner) Run(ctx context.Context, inputContent []byte, mode string) (str
 	resp, err := r.Client.GenerateContent(clientCtx, finalPrompt, r.ModelName)
 
 	if err != nil {
-		return "", fmt.Errorf("API処理中にエラーが発生しました: %w", err)
+		return "", fmt.Errorf("Gemini APIでのコンテンツ生成中にエラーが発生しました: %w", err)
 	}
 
 	// AIが生成したテキストのみを返却

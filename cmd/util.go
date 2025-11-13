@@ -33,8 +33,7 @@ func GenerateAndOutput(ctx context.Context, inputContent []byte, subcommandMode 
 		displayMode = "テンプレートなし (汎用モード)"
 	}
 
-	fmt.Printf("モデル %s で応答を生成中 (モード: %s, Timeout: %d秒)...\n",
-		aiRunner.ModelName, displayMode, int(aiRunner.Timeout.Seconds()))
+	slog.Info("応答を生成中", "model", aiRunner.ModelName, "mode", displayMode, "timeout", int(aiRunner.Timeout.Seconds()))
 
 	// 1. Runnerに処理を委譲し、結果の文字列を受け取る
 	outputContent, err := aiRunner.Run(ctx, inputContent, subcommandMode)
