@@ -1,8 +1,13 @@
 package cmd
 
 import (
+	"context"
+	"fmt"
+	"time"
+
 	"github.com/shouni/go-ai-client/v2/pkg/ai/gemini"
 	"github.com/shouni/go-ai-client/v2/prompts"
+	"github.com/shouni/go-utils/iohandler"
 	"github.com/spf13/cobra"
 )
 
@@ -25,27 +30,33 @@ func NewPromptCmd() *cobra.Command {
   ai-client prompt "猫と魚の会話" -d dialogue
 `,
 		RunE: func(cmd *cobra.Command, args []string) error {
-
-			// 入力内容の読み込み
-			inputContent, err := readInput(cmd, args)
-			if err != nil {
-				return err
+			// 1. 入力内容の決定 (引数 > ファイル/stdin)
+			var inputText string
+			if len(args) > 0 {
+				inputText = args[0]
+			} else {
+				// iohandler.ReadInput を使用
+				content, err := iohandler.ReadInput("")
+				if err != nil {
+					return err
+				}
+				inputText = string(content)
 			}
-			inputText := string(inputContent)
 
-			client, err := gemini.NewClientFromEnv(cmd.Context())
-			if err != nil {
-				return err
+			if inputText == "" {
+				return fmt.Errorf("処理するための入力テキストがありません。テキストを引数として渡すか、ファイル/標準入力から提供してください。")
 			}
 
+			// 2. プロンプトの構築 (元のロジックを流用)
 			name, content, err := prompts.GetTemplate(promptMode)
 			if err != nil {
-				return err
+				// エラーをより詳しくラップ
+				return fmt.Errorf("プロンプトテンプレート '%s' の取得に失敗しました: %w", promptMode, err)
 			}
 
 			builder, err := prompts.NewPromptBuilder(name, content)
 			if err != nil {
-				return err
+				return fmt.Errorf("プロンプトビルダーの初期化に失敗しました: %w", err)
 			}
 
 			data := prompts.TemplateData{
@@ -54,22 +65,30 @@ func NewPromptCmd() *cobra.Command {
 
 			finalPrompt, err := builder.Build(data)
 			if err != nil {
-				return err
+				return fmt.Errorf("最終プロンプトの構築に失敗しました: %w", err)
 			}
 
-			generateContent, err := client.GenerateContent(cmd.Context(), finalPrompt, ModelName)
+			// 3. クライアント初期化と実行
+			client, err := gemini.NewClientFromEnv(cmd.Context())
 			if err != nil {
-				return err
+				return fmt.Errorf("AIクライアントの初期化に失敗しました: %w", err)
 			}
 
-			// 3. 実行と出力
+			// タイムアウトコンテキストの適用 (Timeout グローバル変数を使用)
+			clientCtx, cancel := context.WithTimeout(cmd.Context(), time.Duration(Timeout)*time.Second)
+			defer cancel()
+
+			generateContent, err := client.GenerateContent(clientCtx, finalPrompt, ModelName)
+			if err != nil {
+				return fmt.Errorf("AIコンテンツ生成中にエラーが発生しました: %w", err)
+			}
+
+			// 4. 結果の出力 (iohandler.WriteOutput を利用)
 			return GenerateAndOutput(cmd.Context(), generateContent.Text)
 		},
 	}
 
-	// promptCmd のみに 'mode' フラグを設定
 	cmd.Flags().StringVarP(&promptMode, "mode", "d", "solo", "生成するスクリプトのモード (solo, dialogue)")
-	cmd.MarkFlagRequired("mode")
 
 	return cmd
 }
