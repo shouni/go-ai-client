@@ -1,53 +1,47 @@
 package cmd
 
 import (
-	"context"
-	_ "embed"
 	"errors"
-	"fmt"
-	"os"
 
-	"github.com/shouni/go-ai-client/pkg/prompt"
 	"github.com/spf13/cobra"
 )
 
-// promptCmd固有のフラグ変数を定義
+// promptMode は 'prompt' サブコマンド固有のフラグ変数を定義
 var promptMode string
 
-// --- 埋め込みプロンプト --- (省略)
-
-//go:embed prompt/zundamon_solo.md
-var ZundamonSoloPrompt string
-
-//go:embed prompt/zundametan_dialogue.md
-var ZundaMetanDialoguePrompt string
-
 // PromptCmd は 'prompt' サブコマンドのインスタンスです。（公開）
-var PromptCmd = NewPromptCmd()
+var promptCmd = NewPromptCmd()
 
-func NewPromptCmd() *cobra.Command { // 関数名をNewPromptCmdに変更
+// NewPromptCmd は 'prompt' コマンドを構築します。
+func NewPromptCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "prompt [テキストまたはファイル]",
+		Use:   "prompt [TEXT or pipe]",
 		Short: "事前に登録されたプロンプトテンプレート（Solo/Dialogue）を使用してスクリプトを生成します。",
-		// ... (Longの説明は省略)
+		Long: `このコマンドは、内部のプロンプトテンプレートを使用して、入力テキストを特定の役割（モード）を持つ
+プロンプトに変換してからモデルに渡します。
 
+利用例:
+  ai-client prompt "Go言語の並行処理について" -d solo
+  ai-client prompt "猫と魚の会話" -d dialogue
+`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			// 1. 入力内容の読み込みとAPIキー確認
+			// 1. SetupRunner の呼び出しを RunE の先頭に移動 (DIの実行) ★
+			if err := SetupRunner(cmd.Context()); err != nil {
+				return err // SetupRunnerでエラーが発生した場合、その具体的なエラーを返す
+			}
+
+			// 2. 入力内容の読み込み
 			inputContent, err := readInput(cmd, args)
 			if err != nil {
 				return err
 			}
-			if err := checkAPIKey(); err != nil {
-				return err
-			}
 
-			// ★ 修正: テンプレートモードでの入力必須チェックを追加
 			if len(inputContent) == 0 {
-				return errors.New("テンプレートモード (prompt) は、処理するための入力テキストを必要とします。コマンドライン引数または標準入力で提供してください。")
+				return errors.New("致命的エラー: テンプレートモード (prompt) は、処理するための入力テキストを必要とします。コマンドライン引数または標準入力で提供してください。")
 			}
 
-			// 2. 実行と出力 (共通ロジックを使用)
-			return GenerateAndOutput(context.Background(), inputContent, promptMode, ModelName)
+			// 3. 実行と出力 (共通ロジックを使用)
+			return GenerateAndOutput(cmd.Context(), inputContent, promptMode)
 		},
 
 		Args: cobra.ArbitraryArgs,
@@ -55,33 +49,12 @@ func NewPromptCmd() *cobra.Command { // 関数名をNewPromptCmdに変更
 
 	// promptCmd のみに 'mode' フラグを設定
 	cmd.Flags().StringVarP(&promptMode, "mode", "d", "solo", "生成するスクリプトのモード (solo, dialogue)")
+	cmd.MarkFlagRequired("mode")
 
 	return cmd
 }
 
-// init はパッケージ初期化時にテンプレートを登録します。
 func init() {
-	failOnInit := func(msg string, err error) {
-		fmt.Fprintf(os.Stderr, "エラー: CLI初期化に失敗しました: %s\n", msg)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "詳細: %v\n", err)
-		}
-		os.Exit(1) // 非ゼロの終了コードで終了
-	}
-
-	// 1. Soloモードのテンプレート登録
-	if ZundamonSoloPrompt == "" {
-		failOnInit("ソロテンプレートの埋め込みが失敗しているか、ファイルが空です。", nil)
-	}
-	if err := prompt.RegisterTemplate("solo", ZundamonSoloPrompt); err != nil {
-		failOnInit("ソロテンプレートの登録に失敗", err)
-	}
-
-	// 2. Dialogueモードのテンプレート登録
-	if ZundaMetanDialoguePrompt == "" {
-		failOnInit("対話テンプレートの埋め込みが失敗しているか、ファイルが空です。", nil)
-	}
-	if err := prompt.RegisterTemplate("dialogue", ZundaMetanDialoguePrompt); err != nil {
-		failOnInit("対話テンプレートの登録に失敗", err)
-	}
+	promptCmd = NewPromptCmd()
+	rootCmd.AddCommand(promptCmd)
 }
