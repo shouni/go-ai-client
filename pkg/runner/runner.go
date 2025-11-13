@@ -81,8 +81,9 @@ func (r *Runner) BuildFullPrompt(inputText string, mode string) (string, error) 
 	return finalPrompt, nil
 }
 
-// Run は、プロンプトを構築し、APIを呼び出し、結果を標準出力に出力する共通ロジックです。
-func (r *Runner) Run(ctx context.Context, inputContent []byte, subcommandMode string) error {
+// Run は、プロンプトを構築し、APIを呼び出し、AIが生成したコンテンツ（文字列）を返します。
+func (r *Runner) Run(ctx context.Context, inputContent []byte, subcommandMode string) (string, error) {
+	// コンテキストのタイムアウトを設定
 	clientCtx, cancel := context.WithTimeout(ctx, r.Timeout)
 	defer cancel()
 
@@ -90,30 +91,26 @@ func (r *Runner) Run(ctx context.Context, inputContent []byte, subcommandMode st
 	modeDisplay := subcommandMode
 	inputText := string(inputContent)
 
+	// プロンプトの構築
 	if subcommandMode == "generic" {
 		finalPrompt = inputText
 		modeDisplay = "テンプレートなし (generic)"
 	} else {
 		var err error
+		// テンプレートに基づいてプロンプトを構築
 		finalPrompt, err = r.BuildFullPrompt(inputText, subcommandMode)
 		if err != nil {
-			return fmt.Errorf("failed to build full prompt (mode: %s): %w", subcommandMode, err)
+			return "", fmt.Errorf("failed to build full prompt (mode: %s): %w", subcommandMode, err)
 		}
 	}
 
 	slog.Info("応答生成リクエスト送信", "model", r.ModelName, "mode", modeDisplay, "timeout", r.Timeout)
-	fmt.Printf("モデル %s で応答を生成中 (モード: %s, Timeout: %d秒)...\n", r.ModelName, modeDisplay, int(r.Timeout.Seconds()))
-
 	// API呼び出し
 	resp, err := r.Client.GenerateContent(clientCtx, finalPrompt, r.ModelName)
 
 	if err != nil {
-		return fmt.Errorf("API処理中にエラーが発生しました: %w", err)
+		return "", fmt.Errorf("API処理中にエラーが発生しました: %w", err)
 	}
 
-	// 結果出力
-	fmt.Printf("|| 応答 (モデル: %s, モード: %s) ||\n", r.ModelName, modeDisplay)
-	fmt.Println(resp.Text)
-
-	return nil
+	return resp.Text, nil
 }
