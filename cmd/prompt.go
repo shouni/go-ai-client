@@ -13,9 +13,6 @@ import (
 // promptMode は 'prompt' サブコマンド固有のフラグ変数を定義
 var promptMode string
 
-// PromptCmd は 'prompt' サブコマンドのインスタンスです。（公開）
-var promptCmd = NewPromptCmd()
-
 // NewPromptCmd は 'prompt' コマンドを構築します。
 func NewPromptCmd() *cobra.Command {
 	cmd := &cobra.Command{
@@ -100,9 +97,4 @@ func buildPrompt(mode string, inputText []byte) (string, error) {
 	}
 
 	return finalPrompt, nil
-}
-
-func init() {
-	promptCmd = NewPromptCmd()
-	rootCmd.AddCommand(promptCmd)
 }

@@ -9,9 +9,6 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// GenericCmd は 'generic' サブコマンドのインスタンスです。（公開）
-var genericCmd = NewGenericCmd()
-
 // NewGenericCmd は 'generic' コマンドを構築します。
 func NewGenericCmd() *cobra.Command {
 	cmd := &cobra.Command{
@@ -62,10 +59,4 @@ func executeGenericCommand(cmd *cobra.Command, args []string) error {
 
 	// 4. 結果の出力
 	return GenerateAndOutput(ctx, generateContent.Text)
-}
-
-func init() {
-	// グローバル変数 'rootCmd' に追加
-	genericCmd = NewGenericCmd()
-	rootCmd.AddCommand(genericCmd)
 }

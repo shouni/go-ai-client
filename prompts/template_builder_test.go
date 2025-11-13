@@ -28,7 +28,8 @@ func TestNewPromptBuilder_EmptyTemplate(t *testing.T) {
 	// エラーケース 1: テンプレート内容が空の場合
 	builder, err := prompts.NewPromptBuilder("empty_template", "")
 	assert.Error(t, err, "空のテンプレート内容ではエラーが発生すべきです")
-	assert.Contains(t, err.Error(), "プロンプトテンプレートの内容が空です", "エラーメッセージが期待通りではありません")
+	// 修正: 期待するエラーメッセージを、テンプレート名を含まない元のフレーズに戻す (内容チェック)
+	assert.Contains(t, err.Error(), "内容が空です", "エラーメッセージが期待通りではありません")
 	assert.Nil(t, builder, "エラー発生時、PromptBuilderインスタンスはnilであるべきです")
 }
 
@@ -36,10 +37,10 @@ func TestNewPromptBuilder_InvalidTemplateSyntax(t *testing.T) {
 	const invalidTemplate = "不正なテンプレートです。{{.Content" // 閉じ括弧が不足
 
 	// エラーケース 2: テンプレートの構文が不正な場合
-	// ★ 修正: promptbuilder.NewPromptBuilder に変更
 	builder, err := prompts.NewPromptBuilder("invalid_syntax", invalidTemplate)
 	assert.Error(t, err, "不正なテンプレート構文でエラーが発生すべきです")
-	assert.Contains(t, err.Error(), "プロンプトテンプレートの解析に失敗しました", "エラーメッセージが期待通りではありません")
+	// 修正: 期待されるエラーメッセージのプレフィックス全体を指定
+	assert.Contains(t, err.Error(), "プロンプトテンプレート 'invalid_syntax' の解析に失敗しました", "エラーメッセージが期待通りではありません")
 	assert.Nil(t, builder, "エラー発生時、PromptBuilderインスタンスはnilであるべきです")
 }
 
@@ -51,11 +52,9 @@ func TestPromptBuilder_Build_Success(t *testing.T) {
 	const templateContent = "指示: 以下の内容に基づいて要約してください。\n\n内容:\n{{.Content}}\n"
 	const inputContent = "今日は晴れでした。明日は雨の予報です。"
 
-	// ★ 修正: promptbuilder.NewPromptBuilder に変更
 	builder, err := prompts.NewPromptBuilder("build_test", templateContent)
 	require.NoError(t, err)
 
-	// ★ 修正: promptbuilder.TemplateData に変更
 	data := prompts.TemplateData{Content: inputContent}
 
 	// 成功ケース: テンプレートが正しくデータで埋め込まれること
@@ -95,7 +94,8 @@ func TestPromptBuilder_Build_MissingTemplateField(t *testing.T) {
 	// 欠落フィールドの参照はデフォルトでエラーになることを期待する
 	prompt, err := builder.Build(data)
 	assert.Error(t, err, "欠落フィールドを参照した場合、エラーが発生すべきです")
-	assert.Contains(t, err.Error(), "プロンプトの実行に失敗しました", "エラーメッセージに実行失敗の言及がありません")
+	// 修正: 期待されるエラーメッセージのプレフィックス全体を指定
+	assert.Contains(t, err.Error(), "プロンプトテンプレート 'missing_field_test' の実行に失敗しました", "エラーメッセージに実行失敗の言及がありません")
 	assert.Contains(t, err.Error(), "can't evaluate field MissingField", "エラーメッセージに欠落フィールドの言及がありません")
 	assert.Empty(t, prompt, "エラー発生時、プロンプトは空文字列であるべきです")
 }
