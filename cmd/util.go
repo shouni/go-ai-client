@@ -21,29 +21,7 @@ const (
 
 // GenerateAndOutput は、RunnerのRunメソッドを呼び出し、結果として得られた
 // AIの応答内容を標準出力に出力し、メタ情報を付加します。
-func GenerateAndOutput(ctx context.Context, inputContent []byte, mode string) error {
-	// RunnerのインスタンスがDIされていることを確認
-	if aiRunner == nil {
-		return fmt.Errorf("内部エラー: AI Runnerが適切に初期化されていません。SetupRunnerが呼び出されましたか？")
-	}
-
-	// Runnerが使用する表示モードを決定
-	displayMode := mode
-	if displayMode == "" {
-		displayMode = "テンプレートなし (汎用モード)"
-	}
-	slog.Info("応答を生成中", "model", aiRunner.ModelName, "mode", displayMode, "timeout", int(aiRunner.Timeout.Seconds()))
-
-	// 1. Runnerに処理を委譲し、結果の文字列を受け取る
-	outputContent, err := aiRunner.Run(ctx, inputContent, mode)
-
-	if err != nil {
-		// Runner内のAPIエラーなどをそのまま返す
-		return err
-	}
-
-	// 2. 結果を整形し、iohandler を使用して出力する (I/Oの責務を委譲)
-
+func GenerateAndOutput(ctx context.Context, outputContent string) error {
 	// 全ての出力を一つの文字列に組み立てる
 	var sb strings.Builder
 
@@ -59,8 +37,8 @@ func GenerateAndOutput(ctx context.Context, inputContent []byte, mode string) er
 	sb.WriteString("\n\n" + separatorLight)
 
 	// メタ情報
-	sb.WriteString(fmt.Sprintf("\nModel: %s", aiRunner.ModelName))
-	sb.WriteString(fmt.Sprintf("\n実行モード: %s", displayMode))
+	sb.WriteString(fmt.Sprintf("\nModel: %s", ModelName))
+	//	sb.WriteString(fmt.Sprintf("\n実行モード: %s", displayMode))
 	sb.WriteString(fmt.Sprintf("\n出力処理時刻: %s", time.Now().Format("2006-01-02 15:04:05")))
 
 	// 終了セパレータ

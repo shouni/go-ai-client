@@ -1,4 +1,4 @@
-package promptbuilder
+package prompts
 
 import (
 	_ "embed"
