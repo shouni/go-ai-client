@@ -1,8 +1,10 @@
 package cmd
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"strings"
@@ -19,32 +21,34 @@ const (
 	separatorLight = "----------------------------------------------"
 )
 
-// resolveInputContent は、コマンドライン引数、ファイルフラグ、標準入力の順序で
-// 処理対象の入力テキストを決定し、返します。
-// inputPath はグローバルなフラグ変数（-i/--input）が格納されていることを想定します。
-func resolveInputContent(args []string, inputPath string) (string, error) {
-	var inputText string
-
-	// 1. コマンドライン引数 (TEXT) をチェック
+// readInput は、コマンドライン引数、ファイルフラグ、標準入力の順序で
+func readInput(cmd *cobra.Command, args []string) ([]byte, error) {
+	// 1. コマンドライン引数からの読み込みを優先 (パイプ処理との混同を避けるため)
 	if len(args) > 0 {
-		// コマンドライン引数が提供されている場合、それを優先
-		inputText = args[0]
-	} else {
-		// 2. ファイルフラグ (-i/--input) または標準入力から読み込み
-		// iohandler.ReadInput は inputPath が空なら標準入力から読み込む
-		content, err := iohandler.ReadInput(inputPath)
-		if err != nil {
-			return "", err
-		}
-		inputText = string(content)
+		// 読み込み元を標準エラー出力で通知
+		fmt.Fprintf(cmd.ErrOrStderr(), "コマンドライン引数から読み込み中...\n")
+		// 引数をスペース区切りで結合して返す
+		return []byte(strings.Join(args, " ")), nil
 	}
 
-	// 3. 入力内容の検証
-	if inputText == "" {
-		return "", fmt.Errorf("処理するための入力テキストがありません。テキストを引数として渡すか、ファイル (%s) または標準入力から提供してください。", inputPath)
+	// 2. 標準入力からの読み込み
+	// cmd.InOrStdin() を使用して標準入力から読み込み
+	fmt.Fprintf(cmd.ErrOrStderr(), "標準入力 (stdin) から読み込み中...\n")
+
+	input, err := io.ReadAll(cmd.InOrStdin())
+	if err != nil {
+		// io.ReadAll のエラーは通常、リソースの切断など致命的な問題
+		return nil, fmt.Errorf("標準入力からの読み込みに失敗しました: %w", err)
 	}
 
-	return inputText, nil
+	// 3. 空入力のチェック
+	if len(bytes.TrimSpace(input)) == 0 {
+		// バイトスライスをトリムして、空白や改行のみでないか確認
+		// 致命的エラーではなく、適切な使い方を促すメッセージにする
+		return nil, fmt.Errorf("入力エラー: 処理するテキストが提供されていません。\n\n使用法:\n1. コマンド引数として直接指定: `yourcommand \"テキスト内容\"`\n2. 標準入力としてパイプで渡す: `cat input.txt | yourcommand`")
+	}
+
+	return input, nil
 }
 
 // GenerateAndOutput は、RunnerのRunメソッドを呼び出し、結果として得られた
@@ -65,7 +69,7 @@ func GenerateAndOutput(ctx context.Context, outputContent string) error {
 	sb.WriteString("\n\n" + separatorLight)
 
 	// メタ情報
-	sb.WriteString(fmt.Sprintf("\nModel: %s", ModelName))
+	sb.WriteString(fmt.Sprintf("\nModel: %s", modelName))
 	//	sb.WriteString(fmt.Sprintf("\n実行モード: %s", displayMode))
 	sb.WriteString(fmt.Sprintf("\n出力処理時刻: %s", time.Now().Format("2006-01-02 15:04:05")))
 

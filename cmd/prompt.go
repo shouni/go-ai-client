@@ -29,8 +29,8 @@ func NewPromptCmd() *cobra.Command {
   ai-client prompt "猫と魚の会話" -d dialogue
 `,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			// 1. 入力内容の決定 (引数 > ファイル/stdin)
-			inputText, err := resolveInputContent(args, "")
+			// 1. 入力内容の決定
+			inputText, err := readInput(cmd, args)
 			if err != nil {
 				return err
 			}
@@ -48,7 +48,7 @@ func NewPromptCmd() *cobra.Command {
 			}
 
 			data := prompts.TemplateData{
-				Content: inputText,
+				Content: string(inputText),
 			}
 
 			finalPrompt, err := builder.Build(data)
@@ -63,10 +63,10 @@ func NewPromptCmd() *cobra.Command {
 			}
 
 			// タイムアウトコンテキストの適用 (Timeout グローバル変数を使用)
-			clientCtx, cancel := context.WithTimeout(cmd.Context(), time.Duration(Timeout)*time.Second)
+			clientCtx, cancel := context.WithTimeout(cmd.Context(), time.Duration(timeout)*time.Second)
 			defer cancel()
 
-			generateContent, err := client.GenerateContent(clientCtx, finalPrompt, ModelName)
+			generateContent, err := client.GenerateContent(clientCtx, finalPrompt, modelName)
 			if err != nil {
 				return fmt.Errorf("AIコンテンツ生成中にエラーが発生しました: %w", err)
 			}
