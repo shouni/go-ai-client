@@ -7,11 +7,12 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	. "github.com/shouni/go-ai-client/v2/pkg/promptbuilder"
+	// ★ 修正: ドットインポートを削除し、明示的なインポートに変更
+	"github.com/shouni/go-ai-client/v2/pkg/promptbuilder"
 )
 
 // ----------------------------------------------------------------
-// NewPromptBuilder のテスト (変更なし)
+// NewPromptBuilder のテスト
 // ----------------------------------------------------------------
 
 func TestNewPromptBuilder_Success(t *testing.T) {
@@ -19,14 +20,16 @@ func TestNewPromptBuilder_Success(t *testing.T) {
 	const validTemplate = "あなたはAIアシスタントです。\n入力内容: {{.Content}}"
 
 	// 成功ケース: 有効なテンプレートをパースできること
-	builder, err := NewPromptBuilder(templateName, validTemplate)
+	// ★ 修正: promptbuilder.NewPromptBuilder に変更
+	builder, err := promptbuilder.NewPromptBuilder(templateName, validTemplate)
 	require.NoError(t, err, "有効なテンプレートのパースでエラーが発生してはいけません")
 	assert.NotNil(t, builder, "PromptBuilderインスタンスがnilであってはいけません")
 }
 
 func TestNewPromptBuilder_EmptyTemplate(t *testing.T) {
 	// エラーケース 1: テンプレート内容が空の場合
-	builder, err := NewPromptBuilder("empty_template", "")
+	// ★ 修正: promptbuilder.NewPromptBuilder に変更
+	builder, err := promptbuilder.NewPromptBuilder("empty_template", "")
 	assert.Error(t, err, "空のテンプレート内容ではエラーが発生すべきです")
 	assert.Contains(t, err.Error(), "プロンプトテンプレートの内容が空です", "エラーメッセージが期待通りではありません")
 	assert.Nil(t, builder, "エラー発生時、PromptBuilderインスタンスはnilであるべきです")
@@ -36,24 +39,27 @@ func TestNewPromptBuilder_InvalidTemplateSyntax(t *testing.T) {
 	const invalidTemplate = "不正なテンプレートです。{{.Content" // 閉じ括弧が不足
 
 	// エラーケース 2: テンプレートの構文が不正な場合
-	builder, err := NewPromptBuilder("invalid_syntax", invalidTemplate)
+	// ★ 修正: promptbuilder.NewPromptBuilder に変更
+	builder, err := promptbuilder.NewPromptBuilder("invalid_syntax", invalidTemplate)
 	assert.Error(t, err, "不正なテンプレート構文でエラーが発生すべきです")
 	assert.Contains(t, err.Error(), "プロンプトテンプレートの解析に失敗しました", "エラーメッセージが期待通りではありません")
 	assert.Nil(t, builder, "エラー発生時、PromptBuilderインスタンスはnilであるべきです")
 }
 
 // ----------------------------------------------------------------
-// Build のテスト (変更あり)
+// Build のテスト
 // ----------------------------------------------------------------
 
 func TestPromptBuilder_Build_Success(t *testing.T) {
 	const templateContent = "指示: 以下の内容に基づいて要約してください。\n\n内容:\n{{.Content}}\n"
 	const inputContent = "今日は晴れでした。明日は雨の予報です。"
 
-	builder, err := NewPromptBuilder("build_test", templateContent)
+	// ★ 修正: promptbuilder.NewPromptBuilder に変更
+	builder, err := promptbuilder.NewPromptBuilder("build_test", templateContent)
 	require.NoError(t, err)
 
-	data := TemplateData{Content: inputContent}
+	// ★ 修正: promptbuilder.TemplateData に変更
+	data := promptbuilder.TemplateData{Content: inputContent}
 
 	// 成功ケース: テンプレートが正しくデータで埋め込まれること
 	prompt, err := builder.Build(data)
@@ -66,10 +72,12 @@ func TestPromptBuilder_Build_Success(t *testing.T) {
 func TestPromptBuilder_Build_EmptyData(t *testing.T) {
 	const templateContent = "指示: {{.Content}} を評価してください。"
 
-	builder, err := NewPromptBuilder("empty_data_test", templateContent)
+	// ★ 修正: promptbuilder.NewPromptBuilder に変更
+	builder, err := promptbuilder.NewPromptBuilder("empty_data_test", templateContent)
 	require.NoError(t, err)
 
-	data := TemplateData{Content: ""}
+	// ★ 修正: promptbuilder.TemplateData に変更
+	data := promptbuilder.TemplateData{Content: ""}
 
 	// エッジケース: 埋め込むデータが空文字列の場合でも、テンプレート実行は成功すること
 	prompt, err := builder.Build(data)
@@ -84,12 +92,14 @@ func TestPromptBuilder_Build_MissingTemplateField(t *testing.T) {
 	const templateName = "missing_field_test"
 	const templateContent = "データ: {{.Content}} と {{.MissingField}} を使用します。"
 
-	builder, err := NewPromptBuilder(templateName, templateContent)
+	// ★ 修正: promptbuilder.NewPromptBuilder に変更
+	builder, err := promptbuilder.NewPromptBuilder(templateName, templateContent)
 	require.NoError(t, err)
 
-	data := TemplateData{Content: "有効なデータ"}
+	// ★ 修正: promptbuilder.TemplateData に変更
+	data := promptbuilder.TemplateData{Content: "有効なデータ"}
 
-	// ★ 修正: 欠落フィールドの参照はデフォルトでエラーになることを期待する
+	// 欠落フィールドの参照はデフォルトでエラーになることを期待する
 	prompt, err := builder.Build(data)
 	assert.Error(t, err, "欠落フィールドを参照した場合、エラーが発生すべきです")
 	assert.Contains(t, err.Error(), "プロンプトの実行に失敗しました", "エラーメッセージに実行失敗の言及がありません")
