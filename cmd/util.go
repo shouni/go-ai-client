@@ -19,6 +19,34 @@ const (
 	separatorLight = "----------------------------------------------"
 )
 
+// resolveInputContent は、コマンドライン引数、ファイルフラグ、標準入力の順序で
+// 処理対象の入力テキストを決定し、返します。
+// inputPath はグローバルなフラグ変数（-i/--input）が格納されていることを想定します。
+func resolveInputContent(args []string, inputPath string) (string, error) {
+	var inputText string
+
+	// 1. コマンドライン引数 (TEXT) をチェック
+	if len(args) > 0 {
+		// コマンドライン引数が提供されている場合、それを優先
+		inputText = args[0]
+	} else {
+		// 2. ファイルフラグ (-i/--input) または標準入力から読み込み
+		// iohandler.ReadInput は inputPath が空なら標準入力から読み込む
+		content, err := iohandler.ReadInput(inputPath)
+		if err != nil {
+			return "", err
+		}
+		inputText = string(content)
+	}
+
+	// 3. 入力内容の検証
+	if inputText == "" {
+		return "", fmt.Errorf("処理するための入力テキストがありません。テキストを引数として渡すか、ファイル (%s) または標準入力から提供してください。", inputPath)
+	}
+
+	return inputText, nil
+}
+
 // GenerateAndOutput は、RunnerのRunメソッドを呼び出し、結果として得られた
 // AIの応答内容を標準出力に出力し、メタ情報を付加します。
 func GenerateAndOutput(ctx context.Context, outputContent string) error {

@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/shouni/go-ai-client/v2/pkg/ai/gemini"
-	"github.com/shouni/go-utils/iohandler"
 	"github.com/spf13/cobra"
 )
 
@@ -30,21 +29,9 @@ func NewGenericCmd() *cobra.Command {
 
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// 1. 入力内容の決定 (引数 > ファイル/stdin)
-			var inputText string
-			if len(args) > 0 {
-				// コマンドライン引数が提供されている場合、それを優先
-				inputText = args[0]
-			} else {
-				// フラグやパイプ入力を処理 (記憶している ReadInput を利用)
-				content, err := iohandler.ReadInput("")
-				if err != nil {
-					return err
-				}
-				inputText = string(content)
-			}
-
-			if inputText == "" {
-				return fmt.Errorf("処理するための入力テキストがありません。テキストを引数として渡すか、ファイル/標準入力から提供してください。")
+			inputText, err := resolveInputContent(args, "")
+			if err != nil {
+				return err
 			}
 
 			// 2. クライアント初期化
