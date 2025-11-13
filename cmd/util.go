@@ -21,22 +21,22 @@ const (
 
 // GenerateAndOutput は、RunnerのRunメソッドを呼び出し、結果として得られた
 // AIの応答内容を標準出力に出力し、メタ情報を付加します。
-func GenerateAndOutput(ctx context.Context, inputContent []byte, subcommandMode string) error {
+func GenerateAndOutput(ctx context.Context, inputContent []byte, mode string) error {
 	// RunnerのインスタンスがDIされていることを確認
 	if aiRunner == nil {
 		return fmt.Errorf("内部エラー: AI Runnerが適切に初期化されていません。SetupRunnerが呼び出されましたか？")
 	}
 
 	// Runnerが使用する表示モードを決定
-	displayMode := subcommandMode
+	displayMode := mode
 	if displayMode == "" {
 		displayMode = "テンプレートなし (汎用モード)"
 	}
-
 	slog.Info("応答を生成中", "model", aiRunner.ModelName, "mode", displayMode, "timeout", int(aiRunner.Timeout.Seconds()))
 
 	// 1. Runnerに処理を委譲し、結果の文字列を受け取る
-	outputContent, err := aiRunner.Run(ctx, inputContent, subcommandMode)
+	outputContent, err := aiRunner.Run(ctx, inputContent, mode)
+
 	if err != nil {
 		// Runner内のAPIエラーなどをそのまま返す
 		return err
