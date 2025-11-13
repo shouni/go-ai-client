@@ -112,10 +112,8 @@ func (r *Runner) Run(ctx context.Context, inputContent []byte, subcommandMode st
 	}
 
 	// 結果出力
-	fmt.Println("==============================================") // 追加
 	fmt.Printf("|| 応答 (モデル: %s, モード: %s) ||\n", r.ModelName, modeDisplay)
 	fmt.Println(resp.Text)
-	fmt.Println("==============================================")
 
 	return nil
 }
