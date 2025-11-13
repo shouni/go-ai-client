@@ -39,7 +39,7 @@ func NewPromptCmd() *cobra.Command {
 
 // executePromptCommand は 'prompt' サブコマンドの実際の実行ロジックを保持します。
 func executePromptCommand(cmd *cobra.Command, args []string) error {
-	ctx := cmd.Context()
+	commandCtx := cmd.Context()
 
 	// 1. 入力内容の決定
 	inputText, err := readInput(cmd, args)
@@ -54,13 +54,13 @@ func executePromptCommand(cmd *cobra.Command, args []string) error {
 	}
 
 	// 3. クライアント初期化と実行 (タイムアウト適用)
-	client, err := gemini.NewClientFromEnv(ctx)
+	client, err := gemini.NewClientFromEnv(commandCtx)
 	if err != nil {
 		return fmt.Errorf("AIクライアントの初期化に失敗しました: %w", err)
 	}
 
 	// タイムアウトコンテキストの適用 (Timeout グローバル変数を使用)
-	clientCtx, cancel := context.WithTimeout(ctx, time.Duration(timeout)*time.Second)
+	clientCtx, cancel := context.WithTimeout(commandCtx, time.Duration(timeout)*time.Second)
 	defer cancel()
 
 	generateContent, err := client.GenerateContent(clientCtx, finalPrompt, modelName)
@@ -69,7 +69,7 @@ func executePromptCommand(cmd *cobra.Command, args []string) error {
 	}
 
 	// 4. 結果の出力
-	return GenerateAndOutput(ctx, generateContent.Text)
+	return GenerateAndOutput(commandCtx, generateContent.Text)
 }
 
 // buildPrompt はプロンプト構築のロジックを抽象化します。

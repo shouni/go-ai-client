@@ -24,39 +24,48 @@ func NewGenericCmd() *cobra.Command {
   # ファイルから読み込み、標準出力に出力
   ai-client generic -i input.txt`,
 
-		RunE: func(cmd *cobra.Command, args []string) error {
-			// 1. 入力内容の決定
-			inputText, err := readInput(cmd, args)
-			if err != nil {
-				return err
-			}
-
-			// 2. クライアント初期化
-			// 環境変数からクライアントを生成 (context は cmd.Context() を使用)
-			client, err := gemini.NewClientFromEnv(cmd.Context())
-			if err != nil {
-				return fmt.Errorf("AIクライアントの初期化に失敗しました: %w", err)
-			}
-
-			// 3. タイムアウト設定とコンテンツ生成
-			clientCtx, cancel := context.WithTimeout(cmd.Context(), time.Duration(timeout)*time.Second)
-			defer cancel()
-
-			// Gemini APIを呼び出し
-			content, err := client.GenerateContent(clientCtx, string(inputText), modelName)
-			if err != nil {
-				return fmt.Errorf("AIコンテンツ生成中にエラーが発生しました: %w", err)
-			}
-
-			return GenerateAndOutput(cmd.Context(), content.Text)
-		},
+		// 実行ロジックを外部関数に委譲
+		RunE: executeGenericCommand,
 	}
 	return cmd
 }
 
+// executeGenericCommand は 'generic' サブコマンドの実際の実行ロジックを保持します。
+func executeGenericCommand(cmd *cobra.Command, args []string) error {
+	ctx := cmd.Context()
+
+	// 1. 入力内容の決定
+	// readInputは []byte, error を返す
+	inputText, err := readInput(cmd, args)
+	if err != nil {
+		return err // readInput内で十分なエラーメッセージが出ていると想定
+	}
+
+	// 2. クライアント初期化
+	// 環境変数からクライアントを生成
+	client, err := gemini.NewClientFromEnv(ctx)
+	if err != nil {
+		return fmt.Errorf("AIクライアントの初期化に失敗しました: %w", err)
+	}
+
+	// 3. タイムアウト設定とコンテンツ生成
+	// commandCtx を使用し、処理全体にタイムアウトを適用
+	commandCtx, cancel := context.WithTimeout(ctx, time.Duration(timeout)*time.Second)
+	defer cancel()
+
+	// Gemini APIを呼び出し
+	// inputTextは []byte なので、string() にキャストして渡す
+	generateContent, err := client.GenerateContent(commandCtx, string(inputText), modelName)
+	if err != nil {
+		return fmt.Errorf("AIコンテンツ生成中にエラーが発生しました: %w", err)
+	}
+
+	// 4. 結果の出力
+	return GenerateAndOutput(ctx, generateContent.Text)
+}
+
 func init() {
-	// NewGenericCmdを呼び出す前に、genericCmdがnilでないことを確認するロジックは不要です
-	// NewGenericCmdが必ず新しい*cobra.Commandを返すため、直接代入し、rootCmdに追加します。
+	// グローバル変数 'rootCmd' に追加
 	genericCmd = NewGenericCmd()
 	rootCmd.AddCommand(genericCmd)
 }
