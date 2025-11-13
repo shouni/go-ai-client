@@ -1,6 +1,9 @@
 package cmd
 
 import (
+	"context"
+	"time"
+
 	"github.com/shouni/go-ai-client/v2/pkg/ai/gemini"
 	"github.com/spf13/cobra"
 )
@@ -33,7 +36,10 @@ func NewGenericCmd() *cobra.Command {
 				return err
 			}
 
-			content, err := client.GenerateContent(cmd.Context(), inputText, ModelName)
+			clientCtx, cancel := context.WithTimeout(cmd.Context(), time.Duration(Timeout)*time.Second)
+			defer cancel()
+
+			content, err := client.GenerateContent(clientCtx, inputText, ModelName)
 			if err != nil {
 				return err
 			}
