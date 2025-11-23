@@ -45,10 +45,12 @@ func executePromptCommand(cmd *cobra.Command, args []string) error {
 	}
 
 	// 2. プロンプトの構築
-	finalPrompt, err := buildPrompt(promptMode, inputText)
+	builder, err := prompts.NewPromptBuilder()
 	if err != nil {
 		return fmt.Errorf("プロンプトの構築に失敗しました: %w", err)
 	}
+	templateData := prompts.TemplateData{Content: string(inputText)}
+	finalPrompt, err := builder.Build(templateData, promptMode)
 
 	// 3. クライアント初期化と実行 (タイムアウト適用)
 	client, err := gemini.NewClientFromEnv(commandCtx)
@@ -67,34 +69,4 @@ func executePromptCommand(cmd *cobra.Command, args []string) error {
 
 	// 4. 結果の出力
 	return GenerateAndOutput(commandCtx, generateContent.Text)
-}
-
-// buildPrompt はプロンプト構築のロジックを抽象化します。
-func buildPrompt(mode string, inputText []byte) (string, error) {
-	// a. テンプレートの取得
-	name, content, err := prompts.GetTemplate(mode)
-	if err != nil {
-		// prompts.GetTemplate内で詳細なエラーメッセージが出ているため、そのまま返すか、
-		// 呼び出し元がより分かりやすいようにラップします。
-		return "", fmt.Errorf("テンプレート取得エラー: %w", err)
-	}
-
-	// b. ビルダーの初期化
-	// 以前の改善で、NewPromptBuilder は prompts.PromptBuilder インターフェースを返すようになりました。
-	builder, err := prompts.NewPromptBuilder(name, content)
-	if err != nil {
-		return "", fmt.Errorf("ビルダー初期化エラー: %w", err)
-	}
-
-	// c. データの埋め込みと実行
-	data := prompts.TemplateData{
-		Content: string(inputText),
-	}
-
-	finalPrompt, err := builder.Build(data)
-	if err != nil {
-		return "", fmt.Errorf("プロンプトの実行エラー: %w", err)
-	}
-
-	return finalPrompt, nil
 }
