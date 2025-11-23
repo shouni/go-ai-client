@@ -6,8 +6,7 @@ import (
 	"text/template"
 )
 
-// Builder は、最終的なAIプロンプトを構築する契約です。
-// より具体的な実装名と区別するため、インターフェース名を Builder に変更することも検討できます。
+// Builder は、最終的なAIプロンプトを構築するためのインターフェースです。
 type Builder interface {
 	Build(data TemplateData, mode string) (string, error) // 慣習に合わせ引数順序を調整
 }

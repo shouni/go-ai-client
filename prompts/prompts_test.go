@@ -8,7 +8,7 @@ import (
 )
 
 // testTemplates は、テストで使用するためのテンプレートのモックデータです。
-// テンプレート変数の参照を {{.DiffContent}} から {{.Content}} に変更します。
+// これらのテンプレートは、TemplateData.Content フィールドを使用するように定義されています。
 var testTemplates = map[string]string{
 	"release":    "リリースレビューのプロンプト: {{.Content}}",
 	"detail":     "詳細レビューのプロンプト（HTMLエスケープ確認）: {{.Content | html}}",
@@ -101,7 +101,7 @@ func TestPromptBuilder_Build(t *testing.T) {
 
 	// Contentフィールドを使用してテストデータを初期化します。
 	testData := TemplateData{
-		Content: "変更点\n- func main() { ... }", // ★ 修正点: DiffContent -> Content
+		Content: "変更点\n- func main() { ... }",
 	}
 
 	// 1. 成功ケース (release)
@@ -123,7 +123,7 @@ func TestPromptBuilder_Build(t *testing.T) {
 		mode := "detail"
 		// HTML特殊文字（<, >, &）を含むデータ
 		dataWithHTML := TemplateData{
-			Content: "i < 10 && j > 0", // ★ 修正点: DiffContent -> Content
+			Content: "i < 10 && j > 0",
 		}
 		// | html パイプラインによりエスケープされることを確認
 		expected := "詳細レビューのプロンプト（HTMLエスケープ確認）: i &lt; 10 &amp;&amp; j &gt; 0"
