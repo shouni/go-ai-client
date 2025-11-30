@@ -64,8 +64,8 @@ github.com/prometheus/client_model v0.0.0-20190812154241-14fe0d1b01d4/go.mod h1:
 github.com/russross/blackfriday/v2 v2.1.0/go.mod h1:+Rmxgy9KzJVeS9/2gXHxylqXiyQDYRxCVz55jmeOWTM=
 github.com/shouni/go-cli-base v1.0.5 h1:Wn09yji6/DIesFwo81/xlzWaJMqZVG07gXoRxMIre4c=
 github.com/shouni/go-cli-base v1.0.5/go.mod h1:8E4ahg7/LC3cG5zSBR4u/s+ugqrXxEsqXVWGbFlE1P8=
-github.com/shouni/go-utils v1.0.8 h1:zUHDEIHvDkQTLC+VxnnkQHnRztbubTbXFwVxrPywWgU=
-github.com/shouni/go-utils v1.0.8/go.mod h1:dQxOuVTvWFHWEH/G6izteLh+tubkI5Sl1jpDWlCSkBU=
+github.com/shouni/go-utils v1.0.14 h1:AUpkwlzsIb+EkqkHZONFiZp0RuP81t9CSa8SSmMAmkg=
+github.com/shouni/go-utils v1.0.14/go.mod h1:dQxOuVTvWFHWEH/G6izteLh+tubkI5Sl1jpDWlCSkBU=
 github.com/spf13/cobra v1.10.1 h1:lJeBwCfmrnXthfAupyUTzJ/J4Nc1RsHC/mSRU2dll/s=
 github.com/spf13/cobra v1.10.1/go.mod h1:7SmJGaTHFVBY0jW4NXGluQoLvhqFQM+6XSKD+P4XaB0=
 github.com/spf13/pflag v1.0.9/go.mod h1:McXfInJRrz4CZXVZOBLb0bTZqETkiAhM9Iw0y3An2Bg=
