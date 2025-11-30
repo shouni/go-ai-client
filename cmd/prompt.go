@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/shouni/go-ai-client/v2/pkg/ai/gemini"
-	"github.com/shouni/go-ai-client/v2/prompts"
+	"github.com/shouni/go-ai-client/v2/pkg/prompts"
 	"github.com/spf13/cobra"
 )
 
