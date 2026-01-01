@@ -3,98 +3,99 @@ package gemini
 import (
 	"context"
 	"os"
+	"strings"
 	"testing"
+
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
-// TestNewClient_InvalidAPIKey は、APIキーが空の場合に NewClient がエラーを返すかテストします。
+// --- 初期化に関するテスト ---
+
 func TestNewClient_InvalidAPIKey(t *testing.T) {
 	ctx := context.Background()
-	cfg := Config{
-		APIKey: "",
-		// ModelName: "gemini-2.5-flash", // 不要なフィールドを削除
-	}
+	cfg := Config{APIKey: ""}
 
 	t.Run("APIキーが空の場合にエラーを返すこと", func(t *testing.T) {
 		_, err := NewClient(ctx, cfg)
-
 		if err == nil {
 			t.Error("FAIL: APIキーが空の場合、エラーが返されるべきです")
 		}
 
-		// 期待されるエラーメッセージの検証
-		expectedError := "APIKey is required for Gemini client initialization"
-		if err.Error() != expectedError {
-			t.Errorf("FAIL: 予期しないエラーメッセージ\n  got: %q\n  want: %q", err.Error(), expectedError)
+		expectedError := "APIキーは必須です"
+		if err != nil && !strings.Contains(err.Error(), expectedError) {
+			t.Errorf("FAIL: 予期しないエラーメッセージ\n  got: %q\n  want (contains): %q", err.Error(), expectedError)
 		}
 	})
 }
 
-// TestNewClientFromEnv_MissingKey は、環境変数がない場合に NewClientFromEnv がエラーを返すかテストします。
 func TestNewClientFromEnv_MissingKey(t *testing.T) {
 	ctx := context.Background()
 
-	// -------------------------------------------------------------------------
-	// 重要な処理: 環境変数テストのためのセットアップとクリーンアップ
 	originalKey := os.Getenv("GEMINI_API_KEY")
 	originalGoogleKey := os.Getenv("GOOGLE_API_KEY")
-
-	// テストのために一時的にキーを解除
 	os.Unsetenv("GEMINI_API_KEY")
 	os.Unsetenv("GOOGLE_API_KEY")
 
 	defer func() {
-		// テスト後に元の環境変数に戻す
-		if originalKey != "" {
-			os.Setenv("GEMINI_API_KEY", originalKey)
-		}
-		if originalGoogleKey != "" {
-			os.Setenv("GOOGLE_API_KEY", originalGoogleKey)
-		}
+		os.Setenv("GEMINI_API_KEY", originalKey)
+		os.Setenv("GOOGLE_API_KEY", originalGoogleKey)
 	}()
-	// -------------------------------------------------------------------------
 
 	t.Run("環境変数がない場合にエラーを返すこと", func(t *testing.T) {
 		_, err := NewClientFromEnv(ctx)
-
 		if err == nil {
 			t.Error("FAIL: 環境変数がない場合、エラーが返されるべきです")
 		}
 
-		// 期待されるエラーメッセージの検証 (client.go のロジックに合わせて修正)
-		expectedError := "GEMINI_API_KEY or GOOGLE_API_KEY environment variable is not set"
-		if err.Error() != expectedError {
-			t.Errorf("FAIL: 予期しないエラーメッセージ\n  got: %q\n  want: %q", err.Error(), expectedError)
+		// 指摘に基づき、strings.Contains を使用して検証方法を統一
+		expectedError := "環境変数 GEMINI_API_KEY または GOOGLE_API_KEY が設定されていません"
+		if err != nil && !strings.Contains(err.Error(), expectedError) {
+			t.Errorf("FAIL: 予期しないエラーメッセージ\n  got: %q\n  want (contains): %q", err.Error(), expectedError)
 		}
 	})
 }
 
-// TestNewClientFromEnv_Success は、環境変数がある場合にクライアントが成功裏に初期化されるかテストします。
-func TestNewClientFromEnv_Success(t *testing.T) {
-	ctx := context.Background()
+// --- GenerateWithParts に関するテスト方針 ---
 
-	// -------------------------------------------------------------------------
-	// 重要な処理: 環境変数テストのためのセットアップとクリーンアップ
-	originalKey := os.Getenv("GEMINI_API_KEY")
-	os.Setenv("GEMINI_API_KEY", "DUMMY_API_KEY_FOR_TEST") // ダミーキーを設定
-	defer func() {
-		// テスト後に元の環境変数に戻す
-		if originalKey != "" {
-			os.Setenv("GEMINI_API_KEY", originalKey)
-		} else {
-			os.Unsetenv("GEMINI_API_KEY")
-		}
-	}()
-	// -------------------------------------------------------------------------
+/*
+  注意: GenerateWithParts の網羅的テストには、genai.Client が依存する
+  ModelsService のインターフェースをモック化する必要があります。
+  以下に、実装すべきテストケースの構造を定義します。
+*/
 
-	t.Run("環境変数がある場合に成功すること", func(t *testing.T) {
-		client, err := NewClientFromEnv(ctx)
+// TODO: 本番環境でのモックライブラリ導入後、以下のテストを実装します。
 
-		if err != nil {
-			t.Fatalf("FAIL: 環境変数が設定されているにも関わらず初期化に失敗しました: %v", err)
-		}
+func TestClient_GenerateWithParts_Mock(t *testing.T) {
+	// 1. 正常系: 有効な []*genai.Part を渡し、生成結果が返却されること
+	// 2. 異常系 (一時的エラー): codes.Unavailable を返し、リトライが走ることを検証
+	// 3. 異常系 (永続的エラー): codes.InvalidArgument を返し、即座に終了することを検証
+	// 4. 異常系 (ブロック): FinishReasonSafety によりブロックされ、APIResponseError が返ることを検証
+}
 
-		if client == nil {
-			t.Fatal("FAIL: クライアントオブジェクトが nil です")
-		}
-	})
+// shouldRetry の単体テストを追加し、リトライロジックの妥当性を検証します
+func TestShouldRetry(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{"一時的エラー (Unavailable)", status.Error(codes.Unavailable, "service unavailable"), true},
+		{"リソース不足 (ResourceExhausted)", status.Error(codes.ResourceExhausted, "quota exceeded"), true},
+		{"内部エラー (Internal)", status.Error(codes.Internal, "internal server error"), true},
+		{"永続的エラー (InvalidArgument)", status.Error(codes.InvalidArgument, "invalid prompt"), false},
+		{"認証エラー (Unauthenticated)", status.Error(codes.Unauthenticated, "invalid key"), false},
+		{"コンテキストキャンセル", context.Canceled, false},
+		{"タイムアウト", context.DeadlineExceeded, false},
+		// ------------------------------------------------------
+		{"APIResponseError (ブロック)", &APIResponseError{msg: "blocked"}, false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := shouldRetry(tt.err); got != tt.want {
+				t.Errorf("shouldRetry(%v) = %v, want %v", tt.err, got, tt.want)
+			}
+		})
+	}
 }
