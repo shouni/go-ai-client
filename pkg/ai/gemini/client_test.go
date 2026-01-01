@@ -82,9 +82,12 @@ func TestShouldRetry(t *testing.T) {
 	}{
 		{"一時的エラー (Unavailable)", status.Error(codes.Unavailable, "service unavailable"), true},
 		{"リソース不足 (ResourceExhausted)", status.Error(codes.ResourceExhausted, "quota exceeded"), true},
+		{"内部エラー (Internal)", status.Error(codes.Internal, "internal server error"), true},
 		{"永続的エラー (InvalidArgument)", status.Error(codes.InvalidArgument, "invalid prompt"), false},
 		{"認証エラー (Unauthenticated)", status.Error(codes.Unauthenticated, "invalid key"), false},
-		{"コンテキストキャンセル", context.Canceled, true},
+		{"コンテキストキャンセル", context.Canceled, false},
+		{"タイムアウト", context.DeadlineExceeded, false},
+		// ------------------------------------------------------
 		{"APIResponseError (ブロック)", &APIResponseError{msg: "blocked"}, false},
 	}
 
