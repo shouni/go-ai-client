@@ -262,8 +262,13 @@ func extractTextFromResponse(resp *genai.GenerateContentResponse) (string, error
 		return "", nil
 	}
 
-	firstPart := candidate.Content.Parts[0]
+	// Partsの中からテキストを検索する
+	for _, part := range candidate.Content.Parts {
+		if part.Text != "" {
+			return part.Text, nil
+		}
+	}
 
-	// テキストが存在すればそれを返し、なければ空文字を返すのだ（エラーにはしない！）
-	return firstPart.Text, nil
+	// テキスト部分が見つからなかった場合
+	return "", nil
 }
