@@ -14,29 +14,30 @@ import (
 )
 
 const (
-	// DefaultTemperature は、モデルの応答温度のデフォルト値です。(0.0 から 1.0 の範囲で、通常 0.0 が決定論的、1.0 が創造的)
+	// DefaultTemperature は、モデルの応答温度のデフォルト値（0.0〜1.0）
 	DefaultTemperature float32 = 0.7
-	// DefaultMaxRetries デフォルトのリトライ回数
+	// DefaultMaxRetries は、API呼び出し失敗時の最大リトライ回数
 	DefaultMaxRetries = 3
-	// DefaultInitialDelay デフォルトの指数バックオフの初期間隔
+	// DefaultInitialDelay は、指数バックオフの最初の待機時間
 	DefaultInitialDelay = 30 * time.Second
-	// DefaultMaxDelay デフォルトの指数バックオフの最大間隔
+	// DefaultMaxDelay は、指数バックオフの最大待機時間
 	DefaultMaxDelay = 120 * time.Second
 )
 
-// GenerativeModel is the interface that defines the core operations this client provides.
+// GenerativeModel は、このクライアントが提供する主要な生成操作を定義するインターフェース
 type GenerativeModel interface {
+	// GenerateContent は、プロンプトからテキストを生成します。
 	GenerateContent(ctx context.Context, prompt string, modelName string) (*Response, error)
 }
 
-// Client manages communication with the Gemini API. It implements the GenerativeModel interface.
+// Client は Gemini API との通信を管理する構造体です。GenerativeModel を実装しています。
 type Client struct {
 	client      *genai.Client
 	temperature float32
 	retryConfig retry.Config
 }
 
-// Config defines the configuration for initializing the Client.
+// Config は Client を初期化するための設定項目です。
 type Config struct {
 	APIKey       string
 	Temperature  *float32
@@ -45,57 +46,58 @@ type Config struct {
 	MaxDelay     time.Duration // retry.Config.MaxInterval に対応
 }
 
-// Response holds the Gemini API result.
+// ImageOptions は画像生成時の詳細なパラメータ（アスペクト比やシード値）を保持します。
+type ImageOptions struct {
+	AspectRatio string
+	Seed        int32
+}
+
+// Response は Gemini API からのテキスト生成結果を保持する構造体です。
 type Response struct {
 	Text string
 }
 
-// NewClient initializes a Client struct.
+// NewClient は Config に基づいて Gemini クライアントを初期化します。
 func NewClient(ctx context.Context, cfg Config) (*Client, error) {
-
 	// 1. APIキーのバリデーション
 	if cfg.APIKey == "" {
-		return nil, fmt.Errorf("APIKey is required for Gemini client initialization")
+		return nil, fmt.Errorf("APIキーは必須です。設定を確認してください")
 	}
 
 	// 2. 基底クライアントの作成
 	clientConfig := &genai.ClientConfig{
-		APIKey: cfg.APIKey,
+		APIKey:  cfg.APIKey,
+		Backend: genai.BackendGeminiAPI,
 	}
 
 	client, err := genai.NewClient(ctx, clientConfig)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create Gemini client: %w", err)
+		return nil, fmt.Errorf("Geminiクライアントの作成に失敗しました: %w", err)
 	}
 
 	// 3. 温度設定の初期化と検証
 	temp := DefaultTemperature
 	if cfg.Temperature != nil {
-		// float32として検証
 		if *cfg.Temperature < 0.0 || *cfg.Temperature > 1.0 {
-			return nil, fmt.Errorf("temperature must be between 0.0 and 1.0, got %f", *cfg.Temperature)
+			return nil, fmt.Errorf("温度設定は0.0から1.0の間である必要があります。入力値: %f", *cfg.Temperature)
 		}
 		temp = *cfg.Temperature
 	}
 
-	// 4. リトライ設定の初期化と反映
+	// 4. リトライ設定の構築
 	retryCfg := retry.DefaultConfig()
-
-	// MaxRetries の反映
 	if cfg.MaxRetries > 0 {
 		retryCfg.MaxRetries = cfg.MaxRetries
 	} else {
 		retryCfg.MaxRetries = DefaultMaxRetries
 	}
 
-	// InitialDelay (InitialInterval) の反映
 	if cfg.InitialDelay > 0 {
 		retryCfg.InitialInterval = cfg.InitialDelay
 	} else {
 		retryCfg.InitialInterval = DefaultInitialDelay
 	}
 
-	// MaxDelay (MaxInterval) の反映
 	if cfg.MaxDelay > 0 {
 		retryCfg.MaxInterval = cfg.MaxDelay
 	} else {
@@ -109,80 +111,57 @@ func NewClient(ctx context.Context, cfg Config) (*Client, error) {
 	}, nil
 }
 
-// NewClientFromEnv is a helper function that creates a client using the API key from the environment variable.
+// NewClientFromEnv は環境変数からAPIキーを読み込んでクライアントを作成するヘルパー関数です。
 func NewClientFromEnv(ctx context.Context) (*Client, error) {
 	apiKey := os.Getenv("GEMINI_API_KEY")
 	if apiKey == "" {
-		apiKey = os.Getenv("GOOGLE_API_KEY") // GOOGLE_API_KEY もサポート
+		apiKey = os.Getenv("GOOGLE_API_KEY")
 	}
 	if apiKey == "" {
-		return nil, fmt.Errorf("GEMINI_API_KEY or GOOGLE_API_KEY environment variable is not set")
+		return nil, fmt.Errorf("環境変数 GEMINI_API_KEY または GOOGLE_API_KEY が設定されていません")
 	}
 
-	cfg := Config{
-		APIKey: apiKey,
-	}
-
-	return NewClient(ctx, cfg)
+	return NewClient(ctx, Config{APIKey: apiKey})
 }
 
-// GenerateContent sends a prompt to the Gemini model with a retry mechanism.
+// GenerateContent はリトライメカニズムを備えたテキスト生成リクエストを送信します。
 func (c *Client) GenerateContent(ctx context.Context, finalPrompt string, modelName string) (*Response, error) {
-
 	if finalPrompt == "" {
-		return nil, errors.New("prompt content cannot be empty")
+		return nil, errors.New("プロンプトが空です。入力を確認してください")
 	}
 
 	var responseText string
-	// 文字列から Content 構造体を構築
 	contents := promptToContents(finalPrompt)
-
-	// Temperatureには*float32のポインタが必要なため、Clientのfloat32値をポインタに変換
-	tempPtr := &c.temperature
-
-	// API呼び出しパラメータの構築: genai.GenerateContentConfigを使用
 	config := &genai.GenerateContentConfig{
-		Temperature: tempPtr, // *float32型を渡す
+		Temperature: genai.Ptr(c.temperature),
 	}
 
-	// 1. API呼び出しとレスポンス処理を行う操作関数
+	// リトライ対象の操作を定義
 	op := func() error {
-		// GenerateContentに設定（config）を渡す
 		resp, err := c.client.Models.GenerateContent(ctx, modelName, contents, config)
-
 		if err != nil {
-			return err // API呼び出し自体のエラー
+			return err
 		}
 
-		// レスポンスからテキストを抽出（ブロックエラーもここで処理）
 		extractedText, extractErr := extractTextFromResponse(resp)
 		if extractErr != nil {
-			return extractErr // APIResponseError を返す
+			return extractErr
 		}
 
 		responseText = extractedText
 		return nil
 	}
 
-	// 2. shouldRetryFn: API固有の一時的エラー判定ロジック
+	// リトライ判定：API固有のエラー（ブロック等）はリトライしない
 	shouldRetryFn := func(err error) bool {
 		var apiErr *APIResponseError
 		if errors.As(err, &apiErr) {
-			return false // APIResponseError (ブロックなど) は永続エラー
+			return false
 		}
-		// API呼び出しエラーの場合のみ、Gemini固有の判定ロジックを適用
 		return shouldRetry(err)
 	}
 
-	// 3. 汎用リトライサービスを利用して操作を実行
-	err := retry.Do(
-		ctx,
-		c.retryConfig,
-		fmt.Sprintf("Gemini API call to %s", modelName),
-		op,
-		shouldRetryFn,
-	)
-
+	err := retry.Do(ctx, c.retryConfig, fmt.Sprintf("Gemini API call to %s", modelName), op, shouldRetryFn)
 	if err != nil {
 		return nil, err
 	}
@@ -190,9 +169,51 @@ func (c *Client) GenerateContent(ctx context.Context, finalPrompt string, modelN
 	return &Response{Text: responseText}, nil
 }
 
-// promptToContents converts a simple string prompt to the genai.Content required by the SDK.
+// GenerateWithParts はマルチモーダルなリクエスト（画像データ等を含む）をリトライ付きで送信します。
+func (c *Client) GenerateWithParts(ctx context.Context, modelName string, parts []*genai.Part, opts ImageOptions) (*genai.GenerateContentResponse, error) {
+	contents := []*genai.Content{{Role: "user", Parts: parts}}
+
+	genConfig := &genai.GenerateContentConfig{
+		Temperature:     genai.Ptr(c.temperature),
+		TopP:            genai.Ptr(float32(0.95)),
+		MaxOutputTokens: int32(8192),
+		CandidateCount:  int32(1),
+		Seed:            genai.Ptr(opts.Seed),
+		ImageConfig: &genai.ImageConfig{
+			AspectRatio: opts.AspectRatio,
+		},
+	}
+
+	var finalResp *genai.GenerateContentResponse
+
+	op := func() error {
+		resp, err := c.client.Models.GenerateContent(ctx, modelName, contents, genConfig)
+		if err != nil {
+			return err
+		}
+		finalResp = resp
+		return nil
+	}
+
+	// セーフティフィルタによるブロックなどはリトライ対象外
+	shouldRetryWithFiltering := func(err error) bool {
+		var apiErr *APIResponseError
+		if errors.As(err, &apiErr) {
+			return false
+		}
+		return shouldRetry(err)
+	}
+
+	err := retry.Do(ctx, c.retryConfig, fmt.Sprintf("Gemini Image API call to %s", modelName), op, shouldRetryWithFiltering)
+	if err != nil {
+		return nil, err
+	}
+
+	return finalResp, nil
+}
+
+// promptToContents は文字列プロンプトを SDK 用の Content 構造体に変換します。
 func promptToContents(text string) []*genai.Content {
-	// 単一のユーザーメッセージとしてコンテンツをラップ
 	return []*genai.Content{
 		{
 			Role: "user",
@@ -203,61 +224,52 @@ func promptToContents(text string) []*genai.Content {
 	}
 }
 
-// APIResponseError is an error that occurred after a successful API call but during response processing (e.g., content blocking).
+// APIResponseError は生成成功後のフィルタリング等で発生したエラーを定義します。
 type APIResponseError struct {
 	msg string
 }
 
 func (e *APIResponseError) Error() string { return e.msg }
 
-// shouldRetry determines if an error is transient and should be retried (based on gRPC error codes).
+// shouldRetry は gRPC ステータスコードに基づき、エラーが一時的なものか判定します。
 func shouldRetry(err error) bool {
-	// コンテキストエラー（ユーザーによるキャンセルやタイムアウト）はリトライ対象
 	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 		return true
 	}
 
 	st, ok := status.FromError(err)
 	if !ok {
-		return false // gRPCステータスではない場合はリトライしない
+		return false
 	}
 
-	// リトライすべきgRPCステータスコード
 	switch st.Code() {
 	case codes.DeadlineExceeded, codes.Unavailable, codes.ResourceExhausted, codes.Internal:
-		// サーバー側の問題や一時的なリソース不足
-		return true
-	case codes.Unauthenticated, codes.InvalidArgument, codes.NotFound, codes.PermissionDenied:
-		// 認証失敗、不正な引数など、リトライしても解決しない永続的なエラー
-		return false
+		return true // サーバー側の問題や一時的なリソース不足はリトライ対象
 	default:
 		return false
 	}
 }
 
-// extractTextFromResponse safely extracts text from a successful API response.
+// extractTextFromResponse はレスポンスからテキストを安全に抽出し、終了理由をチェックします。
 func extractTextFromResponse(resp *genai.GenerateContentResponse) (string, error) {
 	if resp == nil || len(resp.Candidates) == 0 {
-		return "", &APIResponseError{msg: "Gemini APIから空または無効なレスポンスが返されました"}
+		return "", &APIResponseError{msg: "Gemini APIから空のレスポンスが返されました"}
 	}
 
 	candidate := resp.Candidates[0]
 
-	// 安全性チェック: レスポンスがブロックされていないか確認
+	// ブロックされていないか確認
 	if candidate.FinishReason != genai.FinishReasonUnspecified && candidate.FinishReason != genai.FinishReasonStop {
-		return "", &APIResponseError{msg: fmt.Sprintf("APIレスポンスがブロックされたか、途中で終了しました。理由: %v", candidate.FinishReason)}
+		return "", &APIResponseError{msg: fmt.Sprintf("生成がブロックされました。理由: %v", candidate.FinishReason)}
 	}
 
-	// コンテンツの有無をチェック
 	if candidate.Content == nil || len(candidate.Content.Parts) == 0 {
-		return "", &APIResponseError{msg: "Gemini レスポンスのコンテンツが空です"}
+		return "", &APIResponseError{msg: "レスポンスのコンテンツが空です"}
 	}
 
 	firstPart := candidate.Content.Parts[0]
-
-	// Textフィールドの値をチェック
 	if firstPart.Text == "" {
-		return "", &APIResponseError{msg: "APIは非テキスト形式の応答を返したか、テキストフィールドが空です"}
+		return "", &APIResponseError{msg: "テキストデータが含まれていません"}
 	}
 
 	return firstPart.Text, nil
