@@ -172,15 +172,9 @@ func (c *Client) GenerateWithParts(ctx context.Context, modelName string, parts 
 			return err
 		}
 
-		// 指摘に基づき、エラーハンドリングを厳密化
 		text, extractErr := extractTextFromResponse(resp)
 		if extractErr != nil {
-			var apiErr *APIResponseError
-			// ブロックなどの致命的なエラー（APIResponseError）は即時返却
-			if errors.As(extractErr, &apiErr) {
-				return extractErr
-			}
-			// その他の非致命的な抽出エラーは無視して空文字を許容
+			return extractErr
 		}
 
 		finalResp = &Response{Text: text, RawResponse: resp}
