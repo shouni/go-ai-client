@@ -22,12 +22,19 @@ const (
 	DefaultInitialDelay = 30 * time.Second
 	// DefaultMaxDelay は、指数バックオフの最大待機時間
 	DefaultMaxDelay = 120 * time.Second
+
+	// 画像生成等のデフォルトパラメータ（マジックナンバーの定数化）
+	DefaultTopP            float32 = 0.95
+	DefaultMaxOutputTokens int32   = 8192
+	DefaultCandidateCount  int32   = 1
 )
 
 // GenerativeModel は、このクライアントが提供する主要な生成操作を定義するインターフェース
 type GenerativeModel interface {
 	// GenerateContent は、プロンプトからテキストを生成します。
 	GenerateContent(ctx context.Context, prompt string, modelName string) (*Response, error)
+	// GenerateWithParts をインターフェースに追加し、契約を完全にします
+	GenerateWithParts(ctx context.Context, modelName string, parts []*genai.Part, opts ImageOptions) (*genai.GenerateContentResponse, error)
 }
 
 // Client は Gemini API との通信を管理する構造体です。GenerativeModel を実装しています。
@@ -124,6 +131,17 @@ func NewClientFromEnv(ctx context.Context) (*Client, error) {
 	return NewClient(ctx, Config{APIKey: apiKey})
 }
 
+// executeWithRetry は、共通のリトライ実行ヘルパーメソッドです（DRY原則の適用）
+func (c *Client) executeWithRetry(ctx context.Context, operationName string, op func() error, shouldRetryFn func(error) bool) error {
+	return retry.Do(
+		ctx,
+		c.retryConfig,
+		operationName,
+		op,
+		shouldRetryFn,
+	)
+}
+
 // GenerateContent はリトライメカニズムを備えたテキスト生成リクエストを送信します。
 func (c *Client) GenerateContent(ctx context.Context, finalPrompt string, modelName string) (*Response, error) {
 	if finalPrompt == "" {
@@ -136,32 +154,25 @@ func (c *Client) GenerateContent(ctx context.Context, finalPrompt string, modelN
 		Temperature: genai.Ptr(c.temperature),
 	}
 
-	// リトライ対象の操作を定義
 	op := func() error {
 		resp, err := c.client.Models.GenerateContent(ctx, modelName, contents, config)
 		if err != nil {
 			return err
 		}
-
 		extractedText, extractErr := extractTextFromResponse(resp)
 		if extractErr != nil {
 			return extractErr
 		}
-
 		responseText = extractedText
 		return nil
 	}
 
-	// リトライ判定：API固有のエラー（ブロック等）はリトライしない
 	shouldRetryFn := func(err error) bool {
 		var apiErr *APIResponseError
-		if errors.As(err, &apiErr) {
-			return false
-		}
-		return shouldRetry(err)
+		return !errors.As(err, &apiErr) && shouldRetry(err)
 	}
 
-	err := retry.Do(ctx, c.retryConfig, fmt.Sprintf("Gemini API call to %s", modelName), op, shouldRetryFn)
+	err := c.executeWithRetry(ctx, fmt.Sprintf("Gemini API call to %s", modelName), op, shouldRetryFn)
 	if err != nil {
 		return nil, err
 	}
@@ -175,9 +186,9 @@ func (c *Client) GenerateWithParts(ctx context.Context, modelName string, parts 
 
 	genConfig := &genai.GenerateContentConfig{
 		Temperature:     genai.Ptr(c.temperature),
-		TopP:            genai.Ptr(float32(0.95)),
-		MaxOutputTokens: int32(8192),
-		CandidateCount:  int32(1),
+		TopP:            genai.Ptr(DefaultTopP),
+		MaxOutputTokens: DefaultMaxOutputTokens,
+		CandidateCount:  DefaultCandidateCount,
 		Seed:            genai.Ptr(opts.Seed),
 		ImageConfig: &genai.ImageConfig{
 			AspectRatio: opts.AspectRatio,
@@ -185,7 +196,6 @@ func (c *Client) GenerateWithParts(ctx context.Context, modelName string, parts 
 	}
 
 	var finalResp *genai.GenerateContentResponse
-
 	op := func() error {
 		resp, err := c.client.Models.GenerateContent(ctx, modelName, contents, genConfig)
 		if err != nil {
@@ -195,16 +205,12 @@ func (c *Client) GenerateWithParts(ctx context.Context, modelName string, parts 
 		return nil
 	}
 
-	// セーフティフィルタによるブロックなどはリトライ対象外
-	shouldRetryWithFiltering := func(err error) bool {
+	shouldRetryFn := func(err error) bool {
 		var apiErr *APIResponseError
-		if errors.As(err, &apiErr) {
-			return false
-		}
-		return shouldRetry(err)
+		return !errors.As(err, &apiErr) && shouldRetry(err)
 	}
 
-	err := retry.Do(ctx, c.retryConfig, fmt.Sprintf("Gemini Image API call to %s", modelName), op, shouldRetryWithFiltering)
+	err := c.executeWithRetry(ctx, fmt.Sprintf("Gemini Image API call to %s", modelName), op, shouldRetryFn)
 	if err != nil {
 		return nil, err
 	}
