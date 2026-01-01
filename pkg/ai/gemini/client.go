@@ -19,9 +19,8 @@ const (
 	DefaultInitialDelay         = 30 * time.Second
 	DefaultMaxDelay             = 120 * time.Second
 
-	DefaultTopP            float32 = 0.95
-	DefaultMaxOutputTokens int32   = 4096
-	DefaultCandidateCount  int32   = 1
+	DefaultTopP           float32 = 0.95
+	DefaultCandidateCount int32   = 1
 )
 
 type Response struct {
@@ -155,11 +154,10 @@ func (c *Client) GenerateWithParts(ctx context.Context, modelName string, parts 
 	contents := []*genai.Content{{Role: "user", Parts: parts}}
 
 	genConfig := &genai.GenerateContentConfig{
-		Temperature:     genai.Ptr(c.temperature),
-		TopP:            genai.Ptr(DefaultTopP),
-		MaxOutputTokens: DefaultMaxOutputTokens,
-		CandidateCount:  DefaultCandidateCount,
-		Seed:            opts.Seed,
+		Temperature:    genai.Ptr(c.temperature),
+		TopP:           genai.Ptr(DefaultTopP),
+		CandidateCount: DefaultCandidateCount,
+		Seed:           opts.Seed,
 		ImageConfig: &genai.ImageConfig{
 			AspectRatio: opts.AspectRatio,
 		},
