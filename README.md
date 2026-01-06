@@ -79,9 +79,6 @@ resp, err := client.GenerateWithParts(ctx, "gemini-1.5-flash", parts, opts)
 
 | 設定項目 | 役割 | デフォルト値 |
 | --- | --- | --- |
-| **`UseImageCompression`** | 送信前の自動JPEG圧縮の有効化 | `false` |
-| **`CompressionQuality`** | JPEG圧縮品質 (1-100) | `75` |
-| **`AutoFileUploadThreshold`** | File APIへ自動昇格させるサイズ閾値 | `1MB` |
 | **`Temperature`** | 応答の創造性 | `0.7` |
 | **`MaxRetries`** | 最大リトライ回数 | `3` |
 | **`InitialDelay`** | リトライ開始時の待機時間 | `30s` |
