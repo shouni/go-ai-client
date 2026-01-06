@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"golang.org/x/sync/errgroup"
 	"log/slog"
 	"os"
 	"time"
@@ -193,20 +194,35 @@ func (c *Client) uploadToInternalFileAPI(ctx context.Context, data []byte, mimeT
 // GenerateWithParts は画像データなどの Parts を含むリクエストを処理する
 func (c *Client) GenerateWithParts(ctx context.Context, modelName string, parts []*genai.Part, opts ImageOptions) (*Response, error) {
 	processedParts := make([]*genai.Part, len(parts))
+	copy(processedParts, parts) // 元のパーツをコピー
+
+	eg, gCtx := errgroup.WithContext(ctx)
+
 	for i, p := range parts {
 		if p.InlineData != nil && len(p.InlineData.Data) > fileAPITransferThreshold {
-			slog.Info("巨大なインラインデータを検知。File APIへ自動転送するのだ", "size", len(p.InlineData.Data))
+			// ループ変数をキャプチャ
+			i := i
+			p := p
 
-			// File APIへのアップロード（前述の Files.Upload を内部で呼ぶ）
-			fileURI, err := c.uploadToInternalFileAPI(ctx, p.InlineData.Data, p.InlineData.MIMEType)
-			if err == nil {
+			eg.Go(func() error {
+				slog.InfoContext(gCtx, "巨大なインラインデータを検知。File APIへ自動転送します。", "size", len(p.InlineData.Data))
+				fileURI, err := c.uploadToInternalFileAPI(gCtx, p.InlineData.Data, p.InlineData.MIMEType)
+				if err != nil {
+					// アップロード失敗時は元のパーツが使われるため、ログ出力のみ
+					slog.WarnContext(gCtx, "File APIへの転送に失敗しました。インラインデータのまま処理を継続します。", "error", err)
+					return nil // エラーを返さず、フォールバックを許容
+				}
 				processedParts[i] = &genai.Part{FileData: &genai.FileData{FileURI: fileURI}}
-				continue
-			}
-			slog.Warn("File API転送失敗。インラインのまま継続するのだ", "error", err)
+				return nil
+			})
 		}
-		processedParts[i] = p
 	}
+
+	if err := eg.Wait(); err != nil {
+		// errgroup 内で致命的なエラーが発生した場合の処理
+		return nil, fmt.Errorf("failed during parallel file upload: %w", err)
+	}
+
 	contents := []*genai.Content{{Role: "user", Parts: processedParts}}
 
 	genConfig := &genai.GenerateContentConfig{
