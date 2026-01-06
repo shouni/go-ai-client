@@ -23,6 +23,8 @@ const (
 
 	DefaultTopP           float32 = 0.95
 	DefaultCandidateCount int32   = 1
+	// fileAPITransferThreshold は、インラインデータをFile APIへ自動転送する際のデータサイズの閾値 (512KB) です。
+	fileAPITransferThreshold = 512 * 1024
 )
 
 // Response は Gemini API からの応答を統一して扱うための構造体なのだ。
@@ -192,7 +194,7 @@ func (c *Client) uploadToInternalFileAPI(ctx context.Context, data []byte, mimeT
 func (c *Client) GenerateWithParts(ctx context.Context, modelName string, parts []*genai.Part, opts ImageOptions) (*Response, error) {
 	processedParts := make([]*genai.Part, len(parts))
 	for i, p := range parts {
-		if p.InlineData != nil && len(p.InlineData.Data) > 1024*512 { // 512KB以上なら自動転送
+		if p.InlineData != nil && len(p.InlineData.Data) > fileAPITransferThreshold {
 			slog.Info("巨大なインラインデータを検知。File APIへ自動転送するのだ", "size", len(p.InlineData.Data))
 
 			// File APIへのアップロード（前述の Files.Upload を内部で呼ぶ）
