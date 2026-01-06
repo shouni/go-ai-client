@@ -223,13 +223,7 @@ func (c *Client) GenerateWithParts(ctx context.Context, modelName string, parts 
 		return nil, fmt.Errorf("failed during parallel file upload: %w", err)
 	}
 
-	// 並列アップロード処理中にコンテキストのキャンセルなどが発生した場合のエラーを処理します。
-	if err := eg.Wait(); err != nil {
-		return nil, fmt.Errorf("failed during parallel file upload: %w", err)
-	}
-
 	contents := []*genai.Content{{Role: "user", Parts: processedParts}}
-
 	genConfig := &genai.GenerateContentConfig{
 		Temperature:    genai.Ptr(c.temperature),
 		TopP:           genai.Ptr(DefaultTopP),
