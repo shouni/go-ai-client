@@ -90,9 +90,7 @@ sequenceDiagram
     participant API as Gemini API (File/Model)
 
     App->>Lib: GenerateWithParts(parts)
-    Note over Lib: 画像が閾値以上かチェック
     alt 巨大な画像データ
-        Lib->>Lib: JPEG圧縮 (Quality: 75)
         Lib->>API: File API へのアップロード
         API-->>Lib: File URI 返却
         Lib->>Lib: Part を FileData に置換
