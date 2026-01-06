@@ -200,7 +200,6 @@ func (c *Client) GenerateWithParts(ctx context.Context, modelName string, parts 
 
 	for i, p := range parts {
 		if p.InlineData != nil && len(p.InlineData.Data) > fileAPITransferThreshold {
-			// ループ変数をキャプチャ
 			i := i
 			p := p
 
@@ -208,9 +207,9 @@ func (c *Client) GenerateWithParts(ctx context.Context, modelName string, parts 
 				slog.InfoContext(gCtx, "巨大なインラインデータを検知。File APIへ自動転送します。", "size", len(p.InlineData.Data))
 				fileURI, err := c.uploadToInternalFileAPI(gCtx, p.InlineData.Data, p.InlineData.MIMEType)
 				if err != nil {
-					// アップロード失敗時は元のパーツが使われるため、ログ出力のみ
-					slog.WarnContext(gCtx, "File APIへの転送に失敗しました。インラインデータのまま処理を継続します。", "error", err)
-					return nil // エラーを返さず、フォールバックを許容
+					// アップロード失敗時はエラーを返し、処理を中断させる
+					slog.ErrorContext(gCtx, "File APIへの転送に失敗しました。", "error", err)
+					return fmt.Errorf("failed to upload large inline data to File API: %w", err)
 				}
 				processedParts[i] = &genai.Part{FileData: &genai.FileData{FileURI: fileURI}}
 				return nil
@@ -218,8 +217,8 @@ func (c *Client) GenerateWithParts(ctx context.Context, modelName string, parts 
 		}
 	}
 
+	// 並列アップロード処理中にコンテキストのキャンセルなどが発生した場合のエラーを処理します。
 	if err := eg.Wait(); err != nil {
-		// errgroup 内で致命的なエラーが発生した場合の処理
 		return nil, fmt.Errorf("failed during parallel file upload: %w", err)
 	}
 
