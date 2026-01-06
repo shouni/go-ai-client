@@ -1,9 +1,11 @@
 package gemini
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"time"
 
@@ -162,9 +164,48 @@ func (c *Client) GenerateContent(ctx context.Context, finalPrompt string, modelN
 	return finalResp, nil
 }
 
-// GenerateWithParts は画像データなどの Parts を含むリクエストを処理するのだ。
+// uploadToInternalFileAPI はバイナリデータを Gemini File API にアップロードし、URI を返す
+func (c *Client) uploadToInternalFileAPI(ctx context.Context, data []byte, mimeType string) (string, error) {
+	// io.Reader に変換
+	reader := bytes.NewReader(data)
+
+	// アップロード設定
+	// DisplayName は任意だけど、管理しやすいようにタイムスタンプを入れる
+	uploadCfg := &genai.UploadFileConfig{
+		MIMEType:    mimeType,
+		DisplayName: fmt.Sprintf("auto-upload-%d", time.Now().UnixNano()),
+	}
+
+	// SDK の Files.Upload メソッドを呼び出す
+	file, err := c.client.Files.Upload(ctx, reader, uploadCfg)
+	if err != nil {
+		return "", fmt.Errorf("failed to upload to File API: %w", err)
+	}
+
+	// 4. アップロードされたファイルの URI を返す
+	// 例: https://generativelanguage.googleapis.com/v1beta/files/xxxx
+	slog.InfoContext(ctx, "巨大データを File API へ自動退避したのだ", "uri", file.URI, "size", len(data))
+	return file.URI, nil
+}
+
+// GenerateWithParts は画像データなどの Parts を含むリクエストを処理する
 func (c *Client) GenerateWithParts(ctx context.Context, modelName string, parts []*genai.Part, opts ImageOptions) (*Response, error) {
-	contents := []*genai.Content{{Role: "user", Parts: parts}}
+	processedParts := make([]*genai.Part, len(parts))
+	for i, p := range parts {
+		if p.InlineData != nil && len(p.InlineData.Data) > 1024*512 { // 512KB以上なら自動転送
+			slog.Info("巨大なインラインデータを検知。File APIへ自動転送するのだ", "size", len(p.InlineData.Data))
+
+			// File APIへのアップロード（前述の Files.Upload を内部で呼ぶ）
+			fileURI, err := c.uploadToInternalFileAPI(ctx, p.InlineData.Data, p.InlineData.MIMEType)
+			if err == nil {
+				processedParts[i] = &genai.Part{FileData: &genai.FileData{FileURI: fileURI}}
+				continue
+			}
+			slog.Warn("File API転送失敗。インラインのまま継続するのだ", "error", err)
+		}
+		processedParts[i] = p
+	}
+	contents := []*genai.Content{{Role: "user", Parts: processedParts}}
 
 	genConfig := &genai.GenerateContentConfig{
 		Temperature:    genai.Ptr(c.temperature),
