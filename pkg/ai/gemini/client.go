@@ -5,12 +5,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"golang.org/x/sync/errgroup"
 	"log/slog"
 	"os"
 	"time"
 
 	"github.com/shouni/go-utils/retry"
+	"golang.org/x/sync/errgroup"
 	"google.golang.org/genai"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -168,7 +168,7 @@ func (c *Client) GenerateContent(ctx context.Context, finalPrompt string, modelN
 }
 
 // uploadToInternalFileAPI はバイナリデータを Gemini File API にアップロードし、URI を返す
-func (c *Client) uploadToInternalFileAPI(ctx context.Context, data []byte, mimeType string) (string, error) {
+func (c *Client) uploadToFileAPI(ctx context.Context, data []byte, mimeType string) (string, error) {
 	// io.Reader に変換
 	reader := bytes.NewReader(data)
 
@@ -205,7 +205,7 @@ func (c *Client) GenerateWithParts(ctx context.Context, modelName string, parts 
 
 			eg.Go(func() error {
 				slog.InfoContext(gCtx, "巨大なインラインデータを検知。File APIへ自動転送します。", "size", len(p.InlineData.Data))
-				fileURI, err := c.uploadToInternalFileAPI(gCtx, p.InlineData.Data, p.InlineData.MIMEType)
+				fileURI, err := c.uploadToFileAPI(gCtx, p.InlineData.Data, p.InlineData.MIMEType)
 				if err != nil {
 					// エラーをラップして返すのみに留める
 					return fmt.Errorf("failed to upload large inline data to File API: %w", err)
