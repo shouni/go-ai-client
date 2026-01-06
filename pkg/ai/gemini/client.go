@@ -1,13 +1,16 @@
 package gemini
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"time"
 
 	"github.com/shouni/go-utils/retry"
+	"golang.org/x/sync/errgroup"
 	"google.golang.org/genai"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -21,6 +24,8 @@ const (
 
 	DefaultTopP           float32 = 0.95
 	DefaultCandidateCount int32   = 1
+	// fileAPITransferThreshold は、インラインデータをFile APIへ自動転送する際のデータサイズの閾値 (512KB) です。
+	fileAPITransferThreshold = 512 * 1024
 )
 
 // Response は Gemini API からの応答を統一して扱うための構造体なのだ。
@@ -162,10 +167,63 @@ func (c *Client) GenerateContent(ctx context.Context, finalPrompt string, modelN
 	return finalResp, nil
 }
 
-// GenerateWithParts は画像データなどの Parts を含むリクエストを処理するのだ。
-func (c *Client) GenerateWithParts(ctx context.Context, modelName string, parts []*genai.Part, opts ImageOptions) (*Response, error) {
-	contents := []*genai.Content{{Role: "user", Parts: parts}}
+// uploadToInternalFileAPI はバイナリデータを Gemini File API にアップロードし、URI を返す
+func (c *Client) uploadToFileAPI(ctx context.Context, data []byte, mimeType string) (string, error) {
+	// io.Reader に変換
+	reader := bytes.NewReader(data)
 
+	// アップロード設定
+	// DisplayName は任意だけど、管理しやすいようにタイムスタンプを入れる
+	uploadCfg := &genai.UploadFileConfig{
+		MIMEType:    mimeType,
+		DisplayName: fmt.Sprintf("auto-upload-%d", time.Now().UnixNano()),
+	}
+
+	// SDK の Files.Upload メソッドを呼び出す
+	file, err := c.client.Files.Upload(ctx, reader, uploadCfg)
+	if err != nil {
+		return "", fmt.Errorf("failed to upload to File API: %w", err)
+	}
+
+	// 4. アップロードされたファイルの URI を返す
+	// 例: https://generativelanguage.googleapis.com/v1beta/files/xxxx
+	slog.InfoContext(ctx, "巨大データを File API へ自動退避したのだ", "uri", file.URI, "size", len(data))
+	return file.URI, nil
+}
+
+// GenerateWithParts は画像データなどの Parts を含むリクエストを処理する
+func (c *Client) GenerateWithParts(ctx context.Context, modelName string, parts []*genai.Part, opts ImageOptions) (*Response, error) {
+	processedParts := make([]*genai.Part, len(parts))
+	copy(processedParts, parts) // 元のパーツをコピー
+
+	eg, gCtx := errgroup.WithContext(ctx)
+
+	for i, p := range parts {
+		if p.InlineData != nil && len(p.InlineData.Data) > fileAPITransferThreshold {
+			i := i
+			p := p
+
+			eg.Go(func() error {
+				slog.InfoContext(gCtx, "巨大なインラインデータを検知。File APIへ自動転送します。", "size", len(p.InlineData.Data))
+				fileURI, err := c.uploadToFileAPI(gCtx, p.InlineData.Data, p.InlineData.MIMEType)
+				if err != nil {
+					// エラーをラップして返すのみに留める
+					return fmt.Errorf("failed to upload large inline data to File API: %w", err)
+				}
+				processedParts[i] = &genai.Part{FileData: &genai.FileData{FileURI: fileURI}}
+				return nil
+			})
+		}
+	}
+
+	// 並列アップロード処理中にコンテキストのキャンセルなどが発生した場合のエラーを処理します。
+	if err := eg.Wait(); err != nil {
+		// 呼び出し元で一元的にエラーログを出力
+		slog.ErrorContext(ctx, "File APIへの並列アップロード中にエラーが発生しました。", "error", err)
+		return nil, fmt.Errorf("failed during parallel file upload: %w", err)
+	}
+
+	contents := []*genai.Content{{Role: "user", Parts: processedParts}}
 	genConfig := &genai.GenerateContentConfig{
 		Temperature:    genai.Ptr(c.temperature),
 		TopP:           genai.Ptr(DefaultTopP),
