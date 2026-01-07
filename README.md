@@ -53,7 +53,7 @@ export GEMINI_API_KEY="YOUR_API_KEY"
 
 ### 画像を含むリクエストの例
 
-ライブラリが自動で「圧縮」と「File API転送」を判断するため、呼び出し側はシンプルに保てます。
+ライブラリが自動で**File API転送**を判断するため、呼び出し側はシンプルに保てます。
 
 ```go
 client, _ := gemini.NewClientFromEnv(ctx)
