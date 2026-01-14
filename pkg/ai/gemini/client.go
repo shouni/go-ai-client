@@ -1,74 +1,16 @@
 package gemini
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"log/slog"
 	"os"
-	"time"
 
 	"github.com/shouni/go-utils/retry"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/genai"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 )
-
-const (
-	DefaultTemperature  float32 = 0.7
-	DefaultMaxRetries           = 3
-	DefaultInitialDelay         = 30 * time.Second
-	DefaultMaxDelay             = 120 * time.Second
-
-	DefaultTopP           float32 = 0.95
-	DefaultCandidateCount int32   = 1
-	// fileAPITransferThreshold は、インラインデータをFile APIへ自動転送する際のデータサイズの閾値 (512KB) です。
-	fileAPITransferThreshold = 512 * 1024
-	// filePollingInterval は、File APIの状態を確認する間隔なのだ。
-	filePollingInterval = 2 * time.Second
-	// filePollingTimeout は、File APIがActive状態になるまでの最大待機時間なのだ。
-	filePollingTimeout = 60 * time.Second
-)
-
-// Response は Gemini API からの応答を統一して扱うための構造体なのだ。
-type Response struct {
-	Text        string                         // 抽出されたテキスト内容
-	RawResponse *genai.GenerateContentResponse // SDK生のレスポンス
-}
-
-// GenerativeModel は、テキストやマルチモーダル（画像含む）生成の振る舞いを定義するインターフェースなのだ。
-type GenerativeModel interface {
-	// GenerateContent はテキストプロンプトを送信して応答を得るのだ。
-	GenerateContent(ctx context.Context, prompt string, modelName string) (*Response, error)
-	// GenerateWithParts は画像などのマルチモーダルパーツを送信して応答を得るのだ。
-	GenerateWithParts(ctx context.Context, modelName string, parts []*genai.Part, opts ImageOptions) (*Response, error)
-}
-
-// Client は Gemini API との実際の通信を担い、リトライ機能を管理する実体なのだ。
-type Client struct {
-	client      *genai.Client
-	temperature float32
-	retryConfig retry.Config
-}
-
-// Config はクライアントを初期化するための設定項目なのだ。
-type Config struct {
-	APIKey       string        // Google AI SDK の API キー
-	Temperature  *float32      // 生成の多様性（0.0〜1.0）
-	MaxRetries   uint64        // 失敗時の最大リトライ回数
-	InitialDelay time.Duration // 指数バックオフの開始待機時間
-	MaxDelay     time.Duration // 指数バックオフの最大待機時間
-}
-
-// ImageOptions は生成時に渡すオプション情報なのだ。
-type ImageOptions struct {
-	AspectRatio    string                 // "16:9", "1:1" など
-	Seed           *int32                 // 生成の再現性のためのシード
-	SystemPrompt   string                 // システム命令（役割固定用）
-	SafetySettings []*genai.SafetySetting // ブロック回避用の安全設定
-}
 
 // NewClient は設定を基に新しい Gemini クライアントを生成するのだ。
 func NewClient(ctx context.Context, cfg Config) (*Client, error) {
@@ -247,110 +189,4 @@ func (c *Client) GenerateWithParts(ctx context.Context, modelName string, parts 
 	}
 
 	return finalResp, nil
-}
-
-// uploadToFileAPI はデータをアップロードし、Active状態になるまでポーリングするのだ。
-func (c *Client) uploadToFileAPI(ctx context.Context, data []byte, mimeType string) (string, string, error) {
-	reader := bytes.NewReader(data)
-	uploadCfg := &genai.UploadFileConfig{
-		MIMEType:    mimeType,
-		DisplayName: fmt.Sprintf("gemini-auto-%d", time.Now().UnixNano()),
-	}
-
-	file, err := c.client.Files.Upload(ctx, reader, uploadCfg)
-	if err != nil {
-		return "", "", fmt.Errorf("upload failed: %w", err)
-	}
-
-	ticker := time.NewTicker(filePollingInterval)
-	defer ticker.Stop()
-
-	timeout := time.After(filePollingTimeout)
-
-	for {
-		select {
-		case <-ctx.Done():
-			return "", "", ctx.Err()
-		case <-timeout:
-			// タイムアウト時は、元のctxが切れていても削除できるように Background を使うのだ
-			go func() {
-				_, _ = c.client.Files.Delete(context.Background(), file.Name, &genai.DeleteFileConfig{})
-			}()
-			return "", "", errors.New("file processing timed out after waiting for Active state")
-		case <-ticker.C:
-			currentFile, err := c.client.Files.Get(ctx, file.Name, &genai.GetFileConfig{})
-			if err != nil {
-				return "", "", fmt.Errorf("get file failed: %w", err)
-			}
-			if currentFile.State == genai.FileStateActive {
-				return currentFile.URI, currentFile.Name, nil
-			}
-			if currentFile.State == genai.FileStateFailed {
-				return "", "", errors.New("File API processing failed")
-			}
-		}
-	}
-}
-
-// APIResponseError は生成ブロックや空レスポンスなど、通信成功後の論理的なエラーを示すのだ。
-type APIResponseError struct {
-	msg string
-}
-
-func (e *APIResponseError) Error() string { return e.msg }
-
-// shouldRetry は発生したエラーがリトライで解決可能かどうかを判定するのだ。
-func shouldRetry(err error) bool {
-	// 規約違反（ブロック）などはリトライしても無駄なので即座に諦めるのだ
-	var apiErr *APIResponseError
-	if errors.As(err, &apiErr) {
-		return false
-	}
-
-	// キャンセルやタイムアウト（上位管理）もリトライ対象外なのだ
-	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-		return false
-	}
-
-	// gRPC のステータスコードを元に、一時的な障害のみリトライを許可するのだ
-	st, ok := status.FromError(err)
-	if !ok {
-		return false
-	}
-
-	switch st.Code() {
-	case codes.DeadlineExceeded, codes.Unavailable, codes.ResourceExhausted, codes.Internal:
-		return true
-	default:
-		return false
-	}
-}
-
-// extractTextFromResponse はレスポンスからテキストを安全に抽出し、異常な終了理由がないか確認するのだ。
-func extractTextFromResponse(resp *genai.GenerateContentResponse) (string, error) {
-	if resp == nil || len(resp.Candidates) == 0 {
-		return "", &APIResponseError{msg: "Gemini APIから空のレスポンスが返されました"}
-	}
-
-	candidate := resp.Candidates[0]
-
-	// FinishReason が正常（指定なし or 停止）以外ならブロックとみなすのだ
-	if candidate.FinishReason != genai.FinishReasonUnspecified && candidate.FinishReason != genai.FinishReasonStop {
-		return "", &APIResponseError{msg: fmt.Sprintf("生成がブロックされました。理由: %v", candidate.FinishReason)}
-	}
-
-	// 画像生成の場合、Content 自体が空でもエラーにせず続行させるのだ（画像データは別途取得可能）
-	if candidate.Content == nil || len(candidate.Content.Parts) == 0 {
-		return "", nil
-	}
-
-	// Partsの中からテキストを検索する
-	for _, part := range candidate.Content.Parts {
-		if part.Text != "" {
-			return part.Text, nil
-		}
-	}
-
-	// テキスト部分が見つからなかった場合
-	return "", nil
 }
