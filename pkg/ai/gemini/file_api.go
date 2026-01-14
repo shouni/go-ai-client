@@ -35,14 +35,18 @@ func (c *Client) uploadToFileAPI(ctx context.Context, data []byte, mimeType stri
 	for {
 		select {
 		case <-ctx.Done():
-			// 呼び出し元がキャンセルされた場合、後処理としてファイルの削除を試みるのだ
+			// 呼び出し元がキャンセルされた場合、後処理としてファイルの削除を試みる
 			go func(fileName string) {
-				_, _ = c.client.Files.Delete(context.Background(), fileName, &genai.DeleteFileConfig{})
+				cleanupCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+				defer cancel()
+				if _, err := c.client.Files.Delete(cleanupCtx, fileName, &genai.DeleteFileConfig{}); err != nil {
+					slog.WarnContext(context.Background(), "Async cleanup of File API failed", "name", fileName, "error", err)
+				}
 			}(file.Name)
 			return "", "", ctx.Err()
 
 		case <-timeout:
-			// タイムアウト発生時、ファイル名を含めた詳細なエラーを返しつつ、非同期で削除するのだ
+			// タイムアウト発生時、ファイル名を含めた詳細なエラーを返しつつ、非同期で削除する
 			go func(fileName string) {
 				_, _ = c.client.Files.Delete(context.Background(), fileName, &genai.DeleteFileConfig{})
 			}(file.Name)

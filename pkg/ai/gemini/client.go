@@ -86,7 +86,7 @@ func (c *Client) GenerateContent(ctx context.Context, finalPrompt string, modelN
 	}
 
 	var finalResp *Response
-	contents := []*genai.Content{{Role: "user", Parts: []*genai.Part{{Text: finalPrompt}}}}
+	contents := promptToContents(finalPrompt)
 	config := &genai.GenerateContentConfig{
 		Temperature: genai.Ptr(c.temperature),
 	}
