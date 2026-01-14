@@ -233,13 +233,10 @@ func (c *Client) GenerateWithParts(ctx context.Context, modelName string, parts 
 		if err != nil {
 			return err
 		}
-
-		// 画像生成の場合、テキストが空でもエラーにせず正常終了とするのだ
 		text, extractErr := extractTextFromResponse(resp)
 		if extractErr != nil {
 			return extractErr
 		}
-
 		finalResp = &Response{Text: text, RawResponse: resp}
 		return nil
 	}
@@ -253,7 +250,6 @@ func (c *Client) GenerateWithParts(ctx context.Context, modelName string, parts 
 }
 
 // uploadToFileAPI はデータをアップロードし、Active状態になるまでポーリングするのだ。
-// 戻り値として、FileURI と削除用の FileName を返します。
 func (c *Client) uploadToFileAPI(ctx context.Context, data []byte, mimeType string) (string, string, error) {
 	reader := bytes.NewReader(data)
 	uploadCfg := &genai.UploadFileConfig{
@@ -263,21 +259,28 @@ func (c *Client) uploadToFileAPI(ctx context.Context, data []byte, mimeType stri
 
 	file, err := c.client.Files.Upload(ctx, reader, uploadCfg)
 	if err != nil {
-		return "", "", err
+		return "", "", fmt.Errorf("upload failed: %w", err)
 	}
 
-	// Active状態を待機
-	ticker := time.NewTicker(2 * time.Second)
+	ticker := time.NewTicker(filePollingInterval)
 	defer ticker.Stop()
+
+	timeout := time.After(filePollingTimeout)
 
 	for {
 		select {
 		case <-ctx.Done():
 			return "", "", ctx.Err()
+		case <-timeout:
+			// タイムアウト時は、元のctxが切れていても削除できるように Background を使うのだ
+			go func() {
+				_, _ = c.client.Files.Delete(context.Background(), file.Name, &genai.DeleteFileConfig{})
+			}()
+			return "", "", errors.New("file processing timed out after waiting for Active state")
 		case <-ticker.C:
 			currentFile, err := c.client.Files.Get(ctx, file.Name, &genai.GetFileConfig{})
 			if err != nil {
-				return "", "", err
+				return "", "", fmt.Errorf("get file failed: %w", err)
 			}
 			if currentFile.State == genai.FileStateActive {
 				return currentFile.URI, currentFile.Name, nil
