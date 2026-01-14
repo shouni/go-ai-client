@@ -3,7 +3,6 @@ package gemini
 import (
 	"bytes"
 	"context"
-	"errors"
 	"fmt"
 	"log/slog"
 	"time"
@@ -36,22 +35,24 @@ func (c *Client) uploadToFileAPI(ctx context.Context, data []byte, mimeType stri
 	for {
 		select {
 		case <-ctx.Done():
-			// 呼び出し元がキャンセルされた場合
-			return "", "", ctx.Err()
-
-		case <-timeout:
-			// File API側の処理が遅延してタイムアウトした場合、非同期でクリーンアップを試みるのだ
-			// 元の ctx は切れている可能性があるため、Background を使用するのだ
+			// 呼び出し元がキャンセルされた場合、後処理としてファイルの削除を試みるのだ
 			go func(fileName string) {
 				_, _ = c.client.Files.Delete(context.Background(), fileName, &genai.DeleteFileConfig{})
 			}(file.Name)
-			return "", "", fmt.Errorf("file processing timed out after %v", filePollingTimeout)
+			return "", "", ctx.Err()
+
+		case <-timeout:
+			// タイムアウト発生時、ファイル名を含めた詳細なエラーを返しつつ、非同期で削除するのだ
+			go func(fileName string) {
+				_, _ = c.client.Files.Delete(context.Background(), fileName, &genai.DeleteFileConfig{})
+			}(file.Name)
+			return "", "", fmt.Errorf("file processing for %q timed out after %v", file.Name, filePollingTimeout)
 
 		case <-ticker.C:
 			// 現在の状態を取得するのだ
 			currentFile, err := c.client.Files.Get(ctx, file.Name, &genai.GetFileConfig{})
 			if err != nil {
-				return "", "", fmt.Errorf("failed to get file status: %w", err)
+				return "", "", fmt.Errorf("failed to get status for %q: %w", file.Name, err)
 			}
 
 			switch currentFile.State {
@@ -59,15 +60,15 @@ func (c *Client) uploadToFileAPI(ctx context.Context, data []byte, mimeType stri
 				// 利用可能になったのだ！
 				return currentFile.URI, currentFile.Name, nil
 			case genai.FileStateFailed:
-				// 何らかの理由で処理が失敗した場合
-				return "", "", errors.New("File API processing failed on server side")
+				// サーバー側で処理が失敗した場合
+				return "", "", fmt.Errorf("File API processing failed on server side for %q", file.Name)
 			case genai.FileStateProcessing:
 				// まだ処理中なので次のループへ行くのだ
 				slog.DebugContext(ctx, "File API processing...", "name", file.Name)
 				continue
 			default:
 				// 未定義の状態などの場合
-				slog.WarnContext(ctx, "Unknown file state received", "state", currentFile.State)
+				slog.WarnContext(ctx, "Unknown file state received", "state", currentFile.State, "name", file.Name)
 			}
 		}
 	}

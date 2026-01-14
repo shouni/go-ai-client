@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"sync"
 
 	"github.com/shouni/go-utils/retry"
 	"golang.org/x/sync/errgroup"
@@ -103,7 +104,6 @@ func (c *Client) GenerateContent(ctx context.Context, finalPrompt string, modelN
 		return nil
 	}
 
-	// 失敗時にリトライ判定を呼び出しつつ実行するのだ
 	err := c.executeWithRetry(ctx, fmt.Sprintf("Gemini API call to %s", modelName), op, shouldRetry)
 	if err != nil {
 		return nil, err
@@ -118,7 +118,10 @@ func (c *Client) GenerateWithParts(ctx context.Context, modelName string, parts 
 	copy(processedParts, parts)
 
 	eg, gCtx := errgroup.WithContext(ctx)
-	var uploadedFiles []string
+	var (
+		mu            sync.Mutex
+		uploadedFiles []string
+	)
 
 	for i, p := range parts {
 		if p.InlineData != nil && len(p.InlineData.Data) > fileAPITransferThreshold {
@@ -129,19 +132,26 @@ func (c *Client) GenerateWithParts(ctx context.Context, modelName string, parts 
 				if err != nil {
 					return err
 				}
+				// インデックスが独立しているためここは安全なのだ
 				processedParts[i] = &genai.Part{FileData: &genai.FileData{FileURI: fileURI}}
+
+				// ★ 共有スライスへの append を Mutex で保護するのだ
+				mu.Lock()
 				uploadedFiles = append(uploadedFiles, fileName)
+				mu.Unlock()
+
 				return nil
 			})
 		}
 	}
 
+	// 並列アップロードの完了を待機するのだ
 	if err := eg.Wait(); err != nil {
 		slog.ErrorContext(ctx, "File APIへの並列アップロード中にエラーが発生しました", "error", err)
 		return nil, fmt.Errorf("file upload failed: %w", err)
 	}
 
-	// 生成処理の完了後、一時ファイルを削除するのだ
+	// 生成処理の完了後（または失敗時）、一時ファイルを一括削除するのだ
 	defer func() {
 		for _, name := range uploadedFiles {
 			if _, err := c.client.Files.Delete(ctx, name, &genai.DeleteFileConfig{}); err != nil {
@@ -150,6 +160,7 @@ func (c *Client) GenerateWithParts(ctx context.Context, modelName string, parts 
 		}
 	}()
 
+	// --- AIへのリクエスト組み立て ---
 	contents := []*genai.Content{{Role: "user", Parts: processedParts}}
 	genConfig := &genai.GenerateContentConfig{
 		Temperature:    genai.Ptr(c.temperature),
@@ -183,6 +194,7 @@ func (c *Client) GenerateWithParts(ctx context.Context, modelName string, parts 
 		return nil
 	}
 
+	// 指数バックオフ付きのリトライ実行なのだ
 	err := c.executeWithRetry(ctx, fmt.Sprintf("Gemini Image API call to %s", modelName), op, shouldRetry)
 	if err != nil {
 		return nil, err
