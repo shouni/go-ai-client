@@ -31,7 +31,7 @@ const (
 // Response は Gemini API からの応答を統一して扱うための構造体なのだ。
 type Response struct {
 	Text        string                         // 抽出されたテキスト内容
-	RawResponse *genai.GenerateContentResponse // SDK生のレスポンス（画像データ抽出用などに保持）
+	RawResponse *genai.GenerateContentResponse // SDK生のレスポンス
 }
 
 // GenerativeModel は、テキストやマルチモーダル（画像含む）生成の振る舞いを定義するインターフェースなのだ。
@@ -58,10 +58,12 @@ type Config struct {
 	MaxDelay     time.Duration // 指数バックオフの最大待機時間
 }
 
-// ImageOptions は画像生成時に渡すオプション情報なのだ。
+// ImageOptions は生成時に渡すオプション情報なのだ。
 type ImageOptions struct {
-	AspectRatio string // アスペクト比（"16:9", "1:1" など）
-	Seed        *int32 // 生成を固定するためのシード値
+	AspectRatio    string                 // "16:9", "1:1" など
+	Seed           *int32                 // 生成の再現性のためのシード
+	SystemPrompt   string                 // システム命令（役割固定用）
+	SafetySettings []*genai.SafetySetting // ブロック回避用の安全設定
 }
 
 // NewClient は設定を基に新しい Gemini クライアントを生成するのだ。
@@ -88,7 +90,6 @@ func NewClient(ctx context.Context, cfg Config) (*Client, error) {
 		temp = *cfg.Temperature
 	}
 
-	// リトライ設定の構築
 	retryCfg := retry.DefaultConfig()
 	if cfg.MaxRetries > 0 {
 		retryCfg.MaxRetries = cfg.MaxRetries
@@ -96,16 +97,14 @@ func NewClient(ctx context.Context, cfg Config) (*Client, error) {
 		retryCfg.MaxRetries = DefaultMaxRetries
 	}
 
+	retryCfg.InitialInterval = DefaultInitialDelay
 	if cfg.InitialDelay > 0 {
 		retryCfg.InitialInterval = cfg.InitialDelay
-	} else {
-		retryCfg.InitialInterval = DefaultInitialDelay
 	}
 
+	retryCfg.MaxInterval = DefaultMaxDelay
 	if cfg.MaxDelay > 0 {
 		retryCfg.MaxInterval = cfg.MaxDelay
-	} else {
-		retryCfg.MaxInterval = DefaultMaxDelay
 	}
 
 	return &Client{
@@ -140,7 +139,7 @@ func (c *Client) GenerateContent(ctx context.Context, finalPrompt string, modelN
 	}
 
 	var finalResp *Response
-	contents := promptToContents(finalPrompt)
+	contents := []*genai.Content{{Role: "user", Parts: []*genai.Part{{Text: finalPrompt}}}}
 	config := &genai.GenerateContentConfig{
 		Temperature: genai.Ptr(c.temperature),
 	}
@@ -167,60 +166,42 @@ func (c *Client) GenerateContent(ctx context.Context, finalPrompt string, modelN
 	return finalResp, nil
 }
 
-// uploadToInternalFileAPI はバイナリデータを Gemini File API にアップロードし、URI を返す
-func (c *Client) uploadToFileAPI(ctx context.Context, data []byte, mimeType string) (string, error) {
-	// io.Reader に変換
-	reader := bytes.NewReader(data)
-
-	// アップロード設定
-	// DisplayName は任意だけど、管理しやすいようにタイムスタンプを入れる
-	uploadCfg := &genai.UploadFileConfig{
-		MIMEType:    mimeType,
-		DisplayName: fmt.Sprintf("auto-upload-%d", time.Now().UnixNano()),
-	}
-
-	// SDK の Files.Upload メソッドを呼び出す
-	file, err := c.client.Files.Upload(ctx, reader, uploadCfg)
-	if err != nil {
-		return "", fmt.Errorf("failed to upload to File API: %w", err)
-	}
-
-	// 4. アップロードされたファイルの URI を返す
-	// 例: https://generativelanguage.googleapis.com/v1beta/files/xxxx
-	slog.InfoContext(ctx, "巨大データを File API へ自動退避したのだ", "uri", file.URI, "size", len(data))
-	return file.URI, nil
-}
-
-// GenerateWithParts は画像データなどの Parts を含むリクエストを処理する
+// GenerateWithParts はマルチモーダルパーツを処理し、巨大なデータは自動的に File API へ退避するのだ。
 func (c *Client) GenerateWithParts(ctx context.Context, modelName string, parts []*genai.Part, opts ImageOptions) (*Response, error) {
 	processedParts := make([]*genai.Part, len(parts))
-	copy(processedParts, parts) // 元のパーツをコピー
+	copy(processedParts, parts)
 
 	eg, gCtx := errgroup.WithContext(ctx)
+	// クリーンアップ対象のファイル名を追跡するためのスライス
+	var uploadedFiles []string
 
 	for i, p := range parts {
 		if p.InlineData != nil && len(p.InlineData.Data) > fileAPITransferThreshold {
-			i := i
-			p := p
-
+			i, p := i, p
 			eg.Go(func() error {
-				slog.InfoContext(gCtx, "巨大なインラインデータを検知。File APIへ自動転送します。", "size", len(p.InlineData.Data))
-				fileURI, err := c.uploadToFileAPI(gCtx, p.InlineData.Data, p.InlineData.MIMEType)
+				slog.InfoContext(gCtx, "巨大データを検知。File APIへ自動転送するのだ", "size", len(p.InlineData.Data))
+				fileURI, fileName, err := c.uploadToFileAPI(gCtx, p.InlineData.Data, p.InlineData.MIMEType)
 				if err != nil {
-					// エラーをラップして返すのみに留める
-					return fmt.Errorf("failed to upload large inline data to File API: %w", err)
+					return fmt.Errorf("failed to upload to File API: %w", err)
 				}
 				processedParts[i] = &genai.Part{FileData: &genai.FileData{FileURI: fileURI}}
+				uploadedFiles = append(uploadedFiles, fileName)
 				return nil
 			})
 		}
 	}
 
-	// 並列アップロード処理中にコンテキストのキャンセルなどが発生した場合のエラーを処理します。
+	// 生成処理の成否に関わらず、アップロードしたファイルを削除する
+	defer func() {
+		for _, name := range uploadedFiles {
+			if _, err := c.client.Files.Delete(ctx, name, &genai.DeleteFileConfig{}); err != nil {
+				slog.WarnContext(ctx, "File API クリーンアップ失敗", "name", name, "error", err)
+			}
+		}
+	}()
+
 	if err := eg.Wait(); err != nil {
-		// 呼び出し元で一元的にエラーログを出力
-		slog.ErrorContext(ctx, "File APIへの並列アップロード中にエラーが発生しました。", "error", err)
-		return nil, fmt.Errorf("failed during parallel file upload: %w", err)
+		return nil, fmt.Errorf("file upload failed: %w", err)
 	}
 
 	contents := []*genai.Content{{Role: "user", Parts: processedParts}}
@@ -229,13 +210,17 @@ func (c *Client) GenerateWithParts(ctx context.Context, modelName string, parts 
 		TopP:           genai.Ptr(DefaultTopP),
 		CandidateCount: DefaultCandidateCount,
 		Seed:           opts.Seed,
+		SafetySettings: opts.SafetySettings,
 	}
 
-	// アスペクト比が指定されている場合のみ ImageConfig をセットする（未対応モデルでのエラー防止なのだ）
-	if opts.AspectRatio != "" {
-		genConfig.ImageConfig = &genai.ImageConfig{
-			AspectRatio: opts.AspectRatio,
+	if opts.SystemPrompt != "" {
+		genConfig.SystemInstruction = &genai.Content{
+			Parts: []*genai.Part{{Text: opts.SystemPrompt}},
 		}
+	}
+
+	if opts.AspectRatio != "" {
+		genConfig.ImageConfig = &genai.ImageConfig{AspectRatio: opts.AspectRatio}
 	}
 
 	var finalResp *Response
@@ -263,9 +248,41 @@ func (c *Client) GenerateWithParts(ctx context.Context, modelName string, parts 
 	return finalResp, nil
 }
 
-// promptToContents は文字列を SDK が受け取れる Content 構造に変換するのだ。
-func promptToContents(text string) []*genai.Content {
-	return []*genai.Content{{Role: "user", Parts: []*genai.Part{{Text: text}}}}
+// uploadToFileAPI はデータをアップロードし、Active状態になるまでポーリングするのだ。
+// 戻り値として、FileURI と削除用の FileName を返します。
+func (c *Client) uploadToFileAPI(ctx context.Context, data []byte, mimeType string) (string, string, error) {
+	reader := bytes.NewReader(data)
+	uploadCfg := &genai.UploadFileConfig{
+		MIMEType:    mimeType,
+		DisplayName: fmt.Sprintf("gemini-auto-%d", time.Now().UnixNano()),
+	}
+
+	file, err := c.client.Files.Upload(ctx, reader, uploadCfg)
+	if err != nil {
+		return "", "", err
+	}
+
+	// Active状態を待機
+	ticker := time.NewTicker(2 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return "", "", ctx.Err()
+		case <-ticker.C:
+			currentFile, err := c.client.Files.Get(ctx, file.Name, &genai.GetFileConfig{})
+			if err != nil {
+				return "", "", err
+			}
+			if currentFile.State == genai.FileStateActive {
+				return currentFile.URI, currentFile.Name, nil
+			}
+			if currentFile.State == genai.FileStateFailed {
+				return "", "", errors.New("File API processing failed")
+			}
+		}
+	}
 }
 
 // APIResponseError は生成ブロックや空レスポンスなど、通信成功後の論理的なエラーを示すのだ。
