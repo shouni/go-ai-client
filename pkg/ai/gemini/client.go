@@ -26,6 +26,10 @@ const (
 	DefaultCandidateCount int32   = 1
 	// fileAPITransferThreshold は、インラインデータをFile APIへ自動転送する際のデータサイズの閾値 (512KB) です。
 	fileAPITransferThreshold = 512 * 1024
+	// filePollingInterval は、File APIの状態を確認する間隔なのだ。
+	filePollingInterval = 2 * time.Second
+	// filePollingTimeout は、File APIがActive状態になるまでの最大待機時間なのだ。
+	filePollingTimeout = 60 * time.Second
 )
 
 // Response は Gemini API からの応答を統一して扱うための構造体なのだ。
@@ -172,7 +176,6 @@ func (c *Client) GenerateWithParts(ctx context.Context, modelName string, parts 
 	copy(processedParts, parts)
 
 	eg, gCtx := errgroup.WithContext(ctx)
-	// クリーンアップ対象のファイル名を追跡するためのスライス
 	var uploadedFiles []string
 
 	for i, p := range parts {
@@ -182,7 +185,7 @@ func (c *Client) GenerateWithParts(ctx context.Context, modelName string, parts 
 				slog.InfoContext(gCtx, "巨大データを検知。File APIへ自動転送するのだ", "size", len(p.InlineData.Data))
 				fileURI, fileName, err := c.uploadToFileAPI(gCtx, p.InlineData.Data, p.InlineData.MIMEType)
 				if err != nil {
-					return fmt.Errorf("failed to upload to File API: %w", err)
+					return err
 				}
 				processedParts[i] = &genai.Part{FileData: &genai.FileData{FileURI: fileURI}}
 				uploadedFiles = append(uploadedFiles, fileName)
@@ -191,7 +194,12 @@ func (c *Client) GenerateWithParts(ctx context.Context, modelName string, parts 
 		}
 	}
 
-	// 生成処理の成否に関わらず、アップロードしたファイルを削除する
+	if err := eg.Wait(); err != nil {
+		slog.ErrorContext(ctx, "File APIへの並列アップロード中にエラーが発生しました", "error", err)
+		return nil, fmt.Errorf("file upload failed: %w", err)
+	}
+
+	// 生成処理の完了後、一時ファイルを削除するのだ
 	defer func() {
 		for _, name := range uploadedFiles {
 			if _, err := c.client.Files.Delete(ctx, name, &genai.DeleteFileConfig{}); err != nil {
@@ -199,10 +207,6 @@ func (c *Client) GenerateWithParts(ctx context.Context, modelName string, parts 
 			}
 		}
 	}()
-
-	if err := eg.Wait(); err != nil {
-		return nil, fmt.Errorf("file upload failed: %w", err)
-	}
 
 	contents := []*genai.Content{{Role: "user", Parts: processedParts}}
 	genConfig := &genai.GenerateContentConfig{
